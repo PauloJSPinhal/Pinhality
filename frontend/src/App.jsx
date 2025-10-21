@@ -225,6 +225,49 @@ export default function App() {
     }
   }
 
+  const handleSync = async () => {
+    setShowManageMenu(false)
+    if (window.confirm('🔄 Sincronizar pastas e fotos?\n\n• Cria coleções para pastas novas\n• Remove coleções de pastas eliminadas\n• Adiciona fotos novas automaticamente\n• Remove fotos de ficheiros eliminados')) {
+      try {
+        const res = await fetch('/api/sync')
+        const data = await res.json()
+        
+        let message = `✅ Sincronização concluída!\n\n`;
+        
+        // Coleções
+        message += `📁 COLEÇÕES:\n`;
+        message += `   Total: ${data.collections.total}\n`;
+        if (data.collections.new > 0) {
+          message += `   ✨ Novas: ${data.collections.new}\n`;
+        }
+        if (data.collections.removed > 0) {
+          message += `   🗑️ Removidas: ${data.collections.removed}\n`;
+        }
+        
+        // Fotos
+        message += `\n📸 FOTOS:\n`;
+        message += `   Total: ${data.photos.total}\n`;
+        if (data.photos.new > 0) {
+          message += `   ✨ Novas: ${data.photos.new}\n`;
+        }
+        if (data.photos.removed > 0) {
+          message += `   🗑️ Removidas: ${data.photos.removed}\n`;
+        }
+        
+        if (data.collections.new === 0 && data.photos.new === 0 && 
+            data.collections.removed === 0 && data.photos.removed === 0) {
+          message += `\n✓ Tudo já estava sincronizado!`;
+        }
+        
+        alert(message)
+        loadInitialData() // Recarrega tudo
+      } catch (error) {
+        alert('❌ Erro ao sincronizar')
+        console.error(error)
+      }
+    }
+  }
+
   // Filtrar fotos
   const filteredPhotos = photos.filter(photo => {
     // Pesquisa em múltiplas categorias
@@ -328,13 +371,20 @@ export default function App() {
                           <span>🏷️</span>
                           <span>Gerir Categorias</span>
                         </button>
-                        {/* NOVO: Escanear Pastas */}
                         <button
                           onClick={handleScanFolders}
                           className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
                         >
                           <span>🔍</span>
                           <span>Escanear Pastas</span>
+                        </button>
+                        {/* NOVO: Sincronizar */}
+                        <button
+                          onClick={handleSync}
+                          className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2 border-t border-gray-600"
+                        >
+                          <span>🔄</span>
+                          <span>Sincronizar Tudo</span>
                         </button>
                       </div>
                     )}

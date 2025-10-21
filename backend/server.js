@@ -1,5 +1,5 @@
 // ========================================
-// backend/server.js - VERSÃO FINAL COM AUTO-DETECÇÃO DE PASTAS
+// backend/server.js - VERSÃO COM SINCRONIZAÇÃO AUTOMÁTICA
 // ========================================
 const express = require('express');
 const fs = require('fs').promises;
@@ -57,7 +57,6 @@ async function initDataFiles() {
 // ROTAS - SETTINGS
 // ========================================
 
-// GET - Obter configurações (coleção ativa)
 app.get('/api/settings', async (req, res) => {
   try {
     const data = await fs.readFile(SETTINGS_FILE, 'utf8');
@@ -69,7 +68,6 @@ app.get('/api/settings', async (req, res) => {
   }
 });
 
-// PUT - Definir coleção ativa
 app.put('/api/settings/active-collection', async (req, res) => {
   try {
     const { collectionId } = req.body;
@@ -87,33 +85,164 @@ app.put('/api/settings/active-collection', async (req, res) => {
 });
 
 // ========================================
-// ROTA - SCAN de pastas (detecção automática de coleções)
+// ROTA - SYNC completo (pastas + fotos)
 // ========================================
 
-// GET - Escanear pastas de fotos e criar coleções automaticamente
-app.get('/api/collections/scan', async (req, res) => {
+app.get('/api/sync', async (req, res) => {
   try {
     const photosDir = path.join(__dirname, 'public', 'photos');
     
-    // Ler todas as pastas dentro de photos/
+    // FASE 1: ESCANEAR PASTAS E CRIAR COLEÇÕES
     const items = await fs.readdir(photosDir, { withFileTypes: true });
     const folders = items
       .filter(item => item.isDirectory())
       .map(item => item.name);
     
-    // Carregar coleções existentes
+    const collectionsData = await fs.readFile(COLLECTIONS_FILE, 'utf8');
+    let collections = JSON.parse(collectionsData);
+    const existingCollectionIds = new Set(collections.map(c => c.id));
+    
+    let newCollections = 0;
+    let removedCollections = 0;
+    
+    // Criar coleções para pastas novas
+    for (const folderName of folders) {
+      if (!existingCollectionIds.has(folderName)) {
+        const newCollection = {
+          id: folderName,
+          name: folderName
+            .split('-')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' '),
+          description: `Coleção gerada automaticamente`,
+          createdAt: new Date().toISOString(),
+          photoCount: 0
+        };
+        collections.push(newCollection);
+        newCollections++;
+        console.log(`✨ Nova coleção criada: ${newCollection.name}`);
+      }
+    }
+    
+    // Remover coleções cujas pastas já não existem
+    const foldersSet = new Set(folders);
+    const collectionsToKeep = collections.filter(col => {
+      if (foldersSet.has(col.id)) {
+        return true;
+      } else {
+        removedCollections++;
+        console.log(`🗑️ Coleção removida (pasta não existe): ${col.name}`);
+        return false;
+      }
+    });
+    collections = collectionsToKeep;
+    
+    await fs.writeFile(COLLECTIONS_FILE, JSON.stringify(collections, null, 2));
+    
+    // FASE 2: ESCANEAR FOTOS E ADICIONAR À BASE DE DADOS
+    const photosData = await fs.readFile(DATA_FILE, 'utf8');
+    let photos = JSON.parse(photosData);
+    
+    const existingImageUrls = new Set(photos.map(p => p.imageUrl));
+    
+    let newPhotos = 0;
+    let removedPhotos = 0;
+    
+    // Escanear cada pasta/coleção
+    for (const folderName of folders) {
+      const folderPath = path.join(photosDir, folderName);
+      
+      try {
+        const files = await fs.readdir(folderPath);
+        const imageFiles = files.filter(file => /\.(jpe?g|png)$/i.test(file));
+        
+        // Adicionar fotos novas
+        for (const fileName of imageFiles) {
+          const imageUrl = `photos/${folderName}/${fileName}`;
+          
+          if (!existingImageUrls.has(imageUrl)) {
+            const newPhoto = {
+              id: Date.now() + Math.random(),
+              title: fileName.replace(/\.(jpe?g|png)$/i, ''),
+              imageUrl: imageUrl,
+              collection: folderName,
+              categories: [],
+              location: '',
+              date: '',
+              time: '',
+              description: 'Adicionada automaticamente - editar para completar',
+              timestamp: Date.now()
+            };
+            
+            photos.push(newPhoto);
+            newPhotos++;
+            console.log(`📸 Nova foto adicionada: ${fileName} [${folderName}]`);
+          }
+        }
+      } catch (err) {
+        console.error(`Erro ao ler pasta ${folderName}:`, err);
+      }
+    }
+    
+    // Remover fotos cujos ficheiros já não existem
+    const validPhotos = [];
+    for (const photo of photos) {
+      const filePath = path.join(__dirname, 'public', photo.imageUrl);
+      try {
+        await fs.access(filePath);
+        validPhotos.push(photo);
+      } catch {
+        removedPhotos++;
+        console.log(`🗑️ Foto removida (ficheiro não existe): ${photo.title}`);
+      }
+    }
+    photos = validPhotos;
+    
+    await fs.writeFile(DATA_FILE, JSON.stringify(photos, null, 2));
+    
+    res.json({
+      success: true,
+      collections: {
+        total: collections.length,
+        new: newCollections,
+        removed: removedCollections
+      },
+      photos: {
+        total: photos.length,
+        new: newPhotos,
+        removed: removedPhotos
+      }
+    });
+    
+  } catch (error) {
+    console.error('Erro ao sincronizar:', error);
+    res.status(500).json({ error: 'Erro ao sincronizar pastas e fotos' });
+  }
+});
+
+// ========================================
+// ROTA - SCAN de pastas
+// ========================================
+
+app.get('/api/collections/scan', async (req, res) => {
+  try {
+    const photosDir = path.join(__dirname, 'public', 'photos');
+    
+    const items = await fs.readdir(photosDir, { withFileTypes: true });
+    const folders = items
+      .filter(item => item.isDirectory())
+      .map(item => item.name);
+    
     const collectionsData = await fs.readFile(COLLECTIONS_FILE, 'utf8');
     let collections = JSON.parse(collectionsData);
     
-    // Criar set de IDs existentes para comparação rápida
     const existingIds = new Set(collections.map(c => c.id));
     
-    // Para cada pasta, criar coleção se não existir
     let newCollections = 0;
     let skippedCollections = 0;
     
     for (const folderName of folders) {
-      const collectionId = folderName; // ID é o nome da pasta
+      const collectionId = folderName;
       
       if (existingIds.has(collectionId)) {
         console.log(`⏭️  Coleção já existe: ${folderName}`);
@@ -158,13 +287,11 @@ app.get('/api/collections/scan', async (req, res) => {
 // ROTAS - COLLECTIONS
 // ========================================
 
-// GET - Listar todas as coleções
 app.get('/api/collections', async (req, res) => {
   try {
     const data = await fs.readFile(COLLECTIONS_FILE, 'utf8');
     let collections = JSON.parse(data);
     
-    // Calcular photoCount para cada coleção
     const photosData = await fs.readFile(DATA_FILE, 'utf8');
     const photos = JSON.parse(photosData);
     
@@ -180,7 +307,6 @@ app.get('/api/collections', async (req, res) => {
   }
 });
 
-// POST - Criar nova coleção
 app.post('/api/collections', async (req, res) => {
   try {
     const { name, description, setAsActive } = req.body;
@@ -192,13 +318,11 @@ app.post('/api/collections', async (req, res) => {
     const data = await fs.readFile(COLLECTIONS_FILE, 'utf8');
     const collections = JSON.parse(data);
     
-    // Gerar ID único
     const id = name.toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove acentos
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
     
-    // Verificar se já existe
     if (collections.find(c => c.id === id)) {
       return res.status(400).json({ error: 'Já existe uma coleção com este nome' });
     }
@@ -214,7 +338,6 @@ app.post('/api/collections', async (req, res) => {
     collections.push(newCollection);
     await fs.writeFile(COLLECTIONS_FILE, JSON.stringify(collections, null, 2));
     
-    // Se setAsActive, definir como ativa
     if (setAsActive) {
       const settings = {
         activeCollection: id,
@@ -231,7 +354,6 @@ app.post('/api/collections', async (req, res) => {
   }
 });
 
-// PUT - Editar coleção
 app.put('/api/collections/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -261,7 +383,6 @@ app.put('/api/collections/:id', async (req, res) => {
   }
 });
 
-// DELETE - Eliminar coleção
 app.delete('/api/collections/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -272,7 +393,6 @@ app.delete('/api/collections/:id', async (req, res) => {
     collections = collections.filter(c => c.id !== id);
     await fs.writeFile(COLLECTIONS_FILE, JSON.stringify(collections, null, 2));
     
-    // Se era a ativa, desativar
     const settingsData = await fs.readFile(SETTINGS_FILE, 'utf8');
     const settings = JSON.parse(settingsData);
     if (settings.activeCollection === id) {
@@ -281,7 +401,6 @@ app.delete('/api/collections/:id', async (req, res) => {
       await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2));
     }
     
-    // Remover collection das fotos
     const photosData = await fs.readFile(DATA_FILE, 'utf8');
     let photos = JSON.parse(photosData);
     photos = photos.map(p => {
@@ -304,7 +423,6 @@ app.delete('/api/collections/:id', async (req, res) => {
 // ROTAS - CATEGORIES
 // ========================================
 
-// GET - Listar todas as categorias
 app.get('/api/categories', async (req, res) => {
   try {
     const data = await fs.readFile(CATEGORIES_FILE, 'utf8');
@@ -316,7 +434,6 @@ app.get('/api/categories', async (req, res) => {
   }
 });
 
-// POST - Criar nova categoria
 app.post('/api/categories', async (req, res) => {
   try {
     const { name } = req.body;
@@ -343,7 +460,6 @@ app.post('/api/categories', async (req, res) => {
   }
 });
 
-// PUT - Renomear categoria
 app.put('/api/categories/:oldName', async (req, res) => {
   try {
     const { oldName } = req.params;
@@ -364,18 +480,15 @@ app.put('/api/categories/:oldName', async (req, res) => {
     categories[index] = newName.trim();
     await fs.writeFile(CATEGORIES_FILE, JSON.stringify(categories, null, 2));
     
-    // Atualizar fotos que usam esta categoria (suporta singular E plural)
     const photosData = await fs.readFile(DATA_FILE, 'utf8');
     let photos = JSON.parse(photosData);
     photos = photos.map(p => {
-      // Se usa categories (array) - NOVO formato
       if (Array.isArray(p.categories)) {
         return { 
           ...p, 
           categories: p.categories.map(cat => cat === oldName ? newName.trim() : cat)
         };
       }
-      // Se usa category (string) - formato ANTIGO (retrocompatibilidade)
       if (p.category === oldName) {
         return { ...p, category: newName.trim() };
       }
@@ -391,7 +504,6 @@ app.put('/api/categories/:oldName', async (req, res) => {
   }
 });
 
-// DELETE - Eliminar categoria
 app.delete('/api/categories/:name', async (req, res) => {
   try {
     const { name } = req.params;
@@ -402,18 +514,15 @@ app.delete('/api/categories/:name', async (req, res) => {
     categories = categories.filter(c => c !== name);
     await fs.writeFile(CATEGORIES_FILE, JSON.stringify(categories, null, 2));
     
-    // Remove a categoria das fotos (suporta singular E plural)
     const photosData = await fs.readFile(DATA_FILE, 'utf8');
     let photos = JSON.parse(photosData);
     photos = photos.map(p => {
-      // Se usa categories (array) - NOVO formato
       if (Array.isArray(p.categories)) {
         return { 
           ...p, 
           categories: p.categories.filter(cat => cat !== name) 
         };
       }
-      // Se usa category (string) - formato ANTIGO (retrocompatibilidade)
       if (p.category === name) {
         return { ...p, category: null };
       }
@@ -430,19 +539,16 @@ app.delete('/api/categories/:name', async (req, res) => {
 });
 
 // ========================================
-// ROTAS - PHOTOS (COM AUTO-DETECÇÃO)
+// ROTAS - PHOTOS
 // ========================================
 
-// GET - Obter todas as fotos (com auto-detecção de coleção)
 app.get('/api/photos', async (req, res) => {
   try {
     const data = await fs.readFile(DATA_FILE, 'utf8');
     let photos = JSON.parse(data);
     
-    // Auto-detectar coleção pelo path da imagem
     photos = photos.map(photo => {
       if (!photo.collection && photo.imageUrl) {
-        // Extrair pasta do caminho: "photos/porto-2024/foto.jpg" -> "porto-2024"
         const pathParts = photo.imageUrl.split('/');
         if (pathParts.length > 2) {
           const detectedCollection = pathParts[1];
@@ -459,7 +565,6 @@ app.get('/api/photos', async (req, res) => {
   }
 });
 
-// POST - Adicionar ou atualizar foto
 app.post('/api/photos', async (req, res) => {
   try {
     const data = await fs.readFile(DATA_FILE, 'utf8');
@@ -468,7 +573,6 @@ app.post('/api/photos', async (req, res) => {
     const newPhoto = {
       ...req.body,
       id: req.body.id || Date.now()
-      // collection já vem no req.body do frontend
     };
     
     if (req.body.id !== undefined) {
@@ -486,7 +590,6 @@ app.post('/api/photos', async (req, res) => {
   }
 });
 
-// DELETE - Eliminar foto
 app.delete('/api/photos/:id', async (req, res) => {
   try {
     const photoId = parseInt(req.params.id);
@@ -530,7 +633,6 @@ app.get('/api/exif', (req, res) => {
       const data = JSON.parse(stdout)[0] || {};
       const result = {};
       
-      // Data e Hora
       if (data.DateTimeOriginal) {
         const [datePart, timePart] = data.DateTimeOriginal.split(' ');
         if (datePart && timePart) {
@@ -556,7 +658,6 @@ app.get('/api/exif', (req, res) => {
         if (num) result.focalLength = num;
       }
       
-      // Câmara (sem duplicação)
       if (data.Make || data.Model) {
         let camera = '';
         const make = data.Make || '';
@@ -573,7 +674,6 @@ app.get('/api/exif', (req, res) => {
       
       if (data.LensModel) result.lens = data.LensModel;
       
-      // Modo de Exposição
       if (data.ExposureProgram !== undefined) {
         const modes = {
           0: 'Não definido', 1: 'Manual', 2: 'Automático',
@@ -588,7 +688,6 @@ app.get('/api/exif', (req, res) => {
         result.exposureMode = modes[data.ExposureProgram] || data.ExposureProgram;
       }
       
-      // Modo de Medição
       if (data.MeteringMode !== undefined) {
         const modes = {
           0: 'Desconhecido', 1: 'Média', 2: 'Ponderada ao Centro',
@@ -614,7 +713,6 @@ app.get('/api/exif', (req, res) => {
       if (data.FocusMode) result.focusMode = data.FocusMode;
       if (data.Copyright) result.copyright = data.Copyright;
       
-      // GPS
       if (data.GPSLatitude && data.GPSLatitudeRef) {
         let lat = data.GPSLatitude;
         const latRef = data.GPSLatitudeRef;
