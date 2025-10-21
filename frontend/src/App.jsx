@@ -195,37 +195,7 @@ export default function App() {
     setFilterCollection(collectionId)
   }
 
-  const handleScanFolders = async () => {
-    setShowManageMenu(false)
-    if (window.confirm('Escanear pastas de fotos e criar coleções automaticamente?')) {
-      try {
-        const res = await fetch('/api/collections/scan')
-        const data = await res.json()
-        
-        let message = `✅ Scan concluído!\n\nPastas encontradas: ${data.foldersFound}`;
-        
-        if (data.newCollections > 0) {
-          message += `\nNovas coleções criadas: ${data.newCollections}`;
-        }
-        
-        if (data.skippedCollections > 0) {
-          message += `\nColeções já existentes (ignoradas): ${data.skippedCollections}`;
-        }
-        
-        if (data.newCollections === 0) {
-          message += `\n\nℹ️ Nenhuma coleção nova foi criada.`;
-        }
-        
-        alert(message)
-        loadCollections()
-      } catch (error) {
-        alert('Erro ao escanear pastas')
-        console.error(error)
-      }
-    }
-  }
-
-  const handleSync = async () => {
+    const handleSync = async () => {
     setShowManageMenu(false)
     if (window.confirm('🔄 Sincronizar pastas e fotos?\n\n• Cria coleções para pastas novas\n• Remove coleções de pastas eliminadas\n• Adiciona fotos novas automaticamente\n• Remove fotos de ficheiros eliminados')) {
       try {
@@ -351,6 +321,7 @@ export default function App() {
                     
                     {showManageMenu && (
                       <div className="absolute right-0 mt-2 w-56 bg-gray-800 rounded-lg shadow-xl border border-gray-700 py-2 z-50">
+                        {/* Gerir Coleções */}
                         <button
                           onClick={() => {
                             setShowManageCollections(true)
@@ -361,6 +332,7 @@ export default function App() {
                           <span>📁</span>
                           <span>Gerir Coleções</span>
                         </button>
+                        {/* Gerir Categorias */}
                         <button
                           onClick={() => {
                             setShowManageCategories(true)
@@ -371,14 +343,7 @@ export default function App() {
                           <span>🏷️</span>
                           <span>Gerir Categorias</span>
                         </button>
-                        <button
-                          onClick={handleScanFolders}
-                          className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
-                        >
-                          <span>🔍</span>
-                          <span>Escanear Pastas</span>
-                        </button>
-                        {/* NOVO: Sincronizar */}
+                        {/* Sincronizar */}
                         <button
                           onClick={handleSync}
                           className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2 border-t border-gray-600"

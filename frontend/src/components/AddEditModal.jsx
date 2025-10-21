@@ -38,98 +38,101 @@ export default function AddEditModal({
   });
 
   useEffect(() => {
-    if (isOpen) {
-      if (isEditing && initialData) {
-        // Extrair apenas o nome do ficheiro do path completo
-        let fileName = initialData.imageUrl?.replace('photos/', '') || '';
-        if (fileName.includes('/')) {
-          const parts = fileName.split('/');
-          fileName = parts.slice(1).join('/'); // Remove a pasta da coleção
-        }
-        
-        setFormData({
-          title: initialData.title || '',
-          imageUrl: fileName,
-          categories: Array.isArray(initialData.categories) ? initialData.categories : (initialData.category ? [initialData.category] : []),
-          collection: initialData.collection || '',
-          location: initialData.location || '',
-          date: initialData.date || '',
-          time: initialData.time || '',
-          aperture: initialData.aperture || '',
-          iso: initialData.iso || '',
-          shutterSpeed: initialData.shutterSpeed || '',
-          focalLength: initialData.focalLength || '',
-          camera: initialData.camera || '',
-          lens: initialData.lens || '',
-          exposureMode: initialData.exposureMode || '',
-          meteringMode: initialData.meteringMode || '',
-          exposureCompensation: initialData.exposureCompensation || '',
-          whiteBalance: initialData.whiteBalance || '',
-          focusMode: initialData.focusMode || '',
-          copyright: initialData.copyright || '',
-          gpsLatitude: initialData.gpsLatitude || '',
-          gpsLongitude: initialData.gpsLongitude || '',
-          description: initialData.description || ''
-        });
-      } else {
-        setFormData({
-          title: '',
-          imageUrl: '',
-          categories: [],
-          collection: '',
-          location: '',
-          date: '',
-          time: '',
-          aperture: '',
-          iso: '',
-          shutterSpeed: '',
-          focalLength: '',
-          camera: '',
-          lens: '',
-          exposureMode: '',
-          meteringMode: '',
-          exposureCompensation: '',
-          whiteBalance: '',
-          focusMode: '',
-          copyright: '',
-          gpsLatitude: '',
-          gpsLongitude: '',
-          description: ''
-        });
+    if (!isOpen) return; // Se não está aberto, ignora
+    
+    if (isEditing && initialData) {
+      // Extrair apenas o nome do ficheiro do path completo
+      let fileName = initialData.imageUrl?.replace('photos/', '') || '';
+      if (fileName.includes('/')) {
+        const parts = fileName.split('/');
+        fileName = parts.slice(1).join('/'); // Remove a pasta da coleção
       }
+      
+      setFormData({
+        title: initialData.title || '',
+        imageUrl: fileName,
+        categories: Array.isArray(initialData.categories) ? initialData.categories : (initialData.category ? [initialData.category] : []),
+        collection: initialData.collection || '',
+        location: initialData.location || '',
+        date: initialData.date || '',
+        time: initialData.time || '',
+        aperture: initialData.aperture || '',
+        iso: initialData.iso || '',
+        shutterSpeed: initialData.shutterSpeed || '',
+        focalLength: initialData.focalLength || '',
+        camera: initialData.camera || '',
+        lens: initialData.lens || '',
+        exposureMode: initialData.exposureMode || '',
+        meteringMode: initialData.meteringMode || '',
+        exposureCompensation: initialData.exposureCompensation || '',
+        whiteBalance: initialData.whiteBalance || '',
+        focusMode: initialData.focusMode || '',
+        copyright: initialData.copyright || '',
+        gpsLatitude: initialData.gpsLatitude || '',
+        gpsLongitude: initialData.gpsLongitude || '',
+        description: initialData.description || ''
+      });
+    } else {
+      // Modo ADICIONAR - só executa UMA VEZ
+      setFormData({
+        title: '',
+        imageUrl: '',
+        categories: [],
+        collection: '',
+        location: '',
+        date: '',
+        time: '',
+        aperture: '',
+        iso: '',
+        shutterSpeed: '',
+        focalLength: '',
+        camera: '',
+        lens: '',
+        exposureMode: '',
+        meteringMode: '',
+        exposureCompensation: '',
+        whiteBalance: '',
+        focusMode: '',
+        copyright: '',
+        gpsLatitude: '',
+        gpsLongitude: '',
+        description: ''
+      });
     }
-  }, [isOpen, isEditing, initialData]);
+  }, [isOpen]); 
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    
-    // Se mudou o imageUrl, tentar detectar coleção automaticamente
-    if (name === 'imageUrl') {
-      const pathParts = value.trim().split('/');
-      if (pathParts.length > 1) {
-        // Formato: "porto-2024/foto.jpg" -> coleção "porto-2024"
-        const detectedCollectionId = pathParts[0];
-        const fileName = pathParts.slice(1).join('/');
-        
-        // Verificar se a coleção existe
-        const collectionExists = collections.find(c => c.id === detectedCollectionId);
-        
+  const { name, value } = e.target;
+  
+  // Se mudou o imageUrl, tentar detectar coleção automaticamente
+  if (name === 'imageUrl') {
+    const pathParts = value.trim().split('/');
+    if (pathParts.length > 1) {
+      // Formato: "porto-2024/foto.jpg" -> coleção "porto-2024"
+      const detectedCollectionId = pathParts[0];
+      const fileName = pathParts.slice(1).join('/');
+      
+      // Verificar se a coleção existe
+      const collectionExists = collections.find(c => c.id === detectedCollectionId);
+      
+      if (collectionExists) {
+        console.log(`✅ Coleção detectada: ${detectedCollectionId}`);
         setFormData(prev => ({ 
           ...prev, 
-          [name]: fileName, // Guarda só o nome do ficheiro
-          collection: collectionExists ? detectedCollectionId : prev.collection
+          imageUrl: fileName, // Guarda só o nome do ficheiro
+          collection: detectedCollectionId
         }));
-        
-        if (collectionExists) {
-          console.log(`✅ Coleção detectada: ${detectedCollectionId}`);
-        }
       } else {
-        setFormData(prev => ({ ...prev, [name]: value }));
+        // Se não existe, guarda o valor como está
+        setFormData(prev => ({ ...prev, imageUrl: value }));
       }
     } else {
-      setFormData(prev => ({ ...prev, [name]: value }));
+      setFormData(prev => ({ ...prev, imageUrl: value }));
     }
-  };
+  } else {
+    setFormData(prev => ({ ...prev, [name]: value }));
+  }
+};
 
   const handleExtractExif = async () => {
     if (!formData.imageUrl.trim()) {
@@ -223,30 +226,27 @@ export default function AddEditModal({
           <div>
             <label className="block text-gray-300 mb-2">
               Nome do ficheiro *
-              <span className="text-xs text-gray-500 ml-2">
-                (pode incluir pasta: porto-2024/foto.jpg)
-              </span>
             </label>
             <input
               type="text"
               name="imageUrl"
               value={formData.imageUrl}
               onChange={handleChange}
-              placeholder="foto.jpg ou porto-2024/foto.jpg"
+              placeholder="foto.jpg"
               className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
             <p className="text-xs text-gray-500 mt-1">
-              💡 Dica: Se escrever "pasta/foto.jpg", a coleção é detectada automaticamente
+              💡 A foto será procurada na pasta da coleção selecionada
             </p>
             
-            {/* Feedback visual da coleção detectada */}
+            {/* Feedback visual da coleção */}
             {formData.collection && (
               <div className="mt-2 flex items-center space-x-2 text-sm">
                 <span className="text-green-400">✓</span>
                 <span className="text-gray-300">
-                  Coleção: <strong className="text-white">
-                    {collections.find(c => c.id === formData.collection)?.name || formData.collection}
+                  Caminho: <strong className="text-white font-mono">
+                    photos/{formData.collection}/{formData.imageUrl || '...'}
                   </strong>
                 </span>
               </div>
