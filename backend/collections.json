@@ -1,0 +1,23 @@
+[
+  {
+    "id": "manifestacao-cgtp-in",
+    "name": "Manifestação CGTP-IN",
+    "description": "",
+    "createdAt": "2025-10-19T22:24:07.372Z",
+    "photoCount": 0
+  },
+  {
+    "id": "passeio-com-lili",
+    "name": "Passeio com Lili",
+    "description": "",
+    "createdAt": "2025-10-19T22:24:21.923Z",
+    "photoCount": 0
+  },
+  {
+    "id": "noturnas",
+    "name": "Noturnas",
+    "description": "Coleção gerada automaticamente da pasta noturnas",
+    "createdAt": "2025-10-21T18:22:55.246Z",
+    "photoCount": 0
+  }
+]

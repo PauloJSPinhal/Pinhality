@@ -1,0 +1,158 @@
+import { useState } from 'react'
+
+export default function PhotoModal({ photo, onClose, onEdit, onDelete, authenticated }) {
+  const [fullScreen, setFullScreen] = useState(false)
+  
+  // Adiciona timestamp para forçar reload da imagem
+  const imageUrl = `${photo.imageUrl}?t=${photo.timestamp || Date.now()}`
+
+  if (fullScreen) {
+    return (
+      <div
+        className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4"
+        onClick={() => setFullScreen(false)}
+      >
+        <div className="relative max-w-full max-h-full" onClick={e => e.stopPropagation()}>
+          <img
+            src={imageUrl}
+            alt={photo.title}
+            className="max-h-[90vh] max-w-[90vw] object-contain"
+          />
+          <button
+            onClick={() => setFullScreen(false)}
+            className="absolute top-4 right-4 bg-black bg-opacity-50 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-opacity-75 transition"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="max-w-6xl w-full my-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <img
+              src={imageUrl}
+              alt={photo.title}
+              className="w-full rounded-lg shadow-2xl"
+            />
+          </div>
+          <div className="bg-gray-800 rounded-lg p-6 space-y-4">
+            <div>
+              <h2 className="text-2xl font-bold text-white mb-2">{photo.title}</h2>
+            </div>
+            {photo.description && (
+              <div>
+                <p className="text-gray-300">{photo.description}</p>
+              </div>
+            )}
+            <div className="border-t border-gray-700 pt-4 space-y-3">
+              {photo.location && (
+                <div className="flex items-center space-x-2 text-gray-300">
+                  <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  </svg>
+                  <span>{photo.location}</span>
+                </div>
+              )}
+              {photo.date && (
+                <div className="flex items-center space-x-2 text-gray-300">
+                  <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span>{new Date(photo.date).toLocaleDateString('pt-PT')}</span>
+                </div>
+              )}
+              {photo.time && (
+                <div className="flex items-center space-x-2 text-gray-300">
+                  <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>{photo.time}</span>
+                </div>
+              )}
+            </div>
+            {(photo.aperture || photo.iso || photo.shutterSpeed || photo.focalLength) && (
+              <div className="border-t border-gray-700 pt-4">
+                <h3 className="text-white font-semibold mb-3">Dados Técnicos</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {photo.aperture && (
+                    <div className="flex items-center space-x-2 text-gray-300">
+                      <span className="text-blue-400">ƒ/</span>
+                      <span className="text-sm">{photo.aperture}</span>
+                    </div>
+                  )}
+                  {photo.iso && (
+                    <div className="flex items-center space-x-2 text-gray-300">
+                      <span className="text-blue-400">ISO</span>
+                      <span className="text-sm">{photo.iso}</span>
+                    </div>
+                  )}
+                  {photo.shutterSpeed && (
+                    <div className="flex items-center space-x-2 text-gray-300">
+                      <span className="text-blue-400">⚡</span>
+                      <span className="text-sm">{photo.shutterSpeed}s</span>
+                    </div>
+                  )}
+                  {photo.focalLength && (
+                    <div className="flex items-center space-x-2 text-gray-300">
+                      <span className="text-blue-400">📷</span>
+                      <span className="text-sm">{photo.focalLength}mm</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {(photo.camera || photo.lens) && (
+              <div className="border-t border-gray-700 pt-4 space-y-2">
+                {photo.camera && (
+                  <div className="text-gray-300">
+                    <span className="text-gray-400 text-sm">Câmara:</span> {photo.camera}
+                  </div>
+                )}
+                {photo.lens && (
+                  <div className="text-gray-300">
+                    <span className="text-gray-400 text-sm">Lente:</span> {photo.lens}
+                  </div>
+                )}
+              </div>
+            )}
+            {authenticated && (
+              <div className="space-y-3 pt-4 border-t border-gray-700">
+                <button
+                  onClick={onDelete}
+                  className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                >
+                  Eliminar Foto
+                </button>
+                <button
+                  onClick={onEdit}
+                  className="w-full px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors"
+                >
+                  Editar
+                </button>
+              </div>
+            )}
+            <button
+              onClick={() => setFullScreen(true)}
+              className="w-full mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+            >
+              Visualizar
+            </button>
+            <button
+              onClick={onClose}
+              className="w-full mt-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+            >
+              Voltar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

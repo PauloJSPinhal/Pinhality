@@ -1,0 +1,125 @@
+portfolio-fotografico/
+├── backend/ 
+│   ├── server.js
+│   ├── photos.json
+│   └── public/photos/      ← imagens (vazio para não sobrecarregar)
+│
+└── frontend/
+    ├── public/
+    │   └── fotos/         ← (symlink para backend/public/fotos)
+    ├── src/
+    │   ├── components/
+    │   │   ├── PhotoGrid.jsx
+    │   │   ├── PhotoModal.jsx
+    │   │   ├── AddPhotoModal.jsx
+    │   │   └── AuthModal.jsx
+    │   ├── App.jsx
+    │   └── main.jsx
+    ├── package.json
+    └── vite.config.js
+    
+=== BACKEND ===
+
+=== backend/package.json ===
+Define as dependências e scripts do servidor:
+express: framework web
+cors: permite requisições do frontend
+piexifjs: extração de metadados EXIF das fotos
+Scripts para iniciar o servidor (npm start ou npm run dev)
+
+=== backend/photos.json ===
+Base de dados em formato JSON que armazena todos os dados das fotografias (metadados, descrições, caminhos).
+
+=== backend/server.js ===
+Coração do backend. Servidor API REST que:
+Serve ficheiros estáticos (HTML, imagens)
+GET /api/photos: lista todas as fotos
+POST /api/photos: adiciona/atualiza fotos
+DELETE /api/photos/:id: elimina fotos
+GET /api/exif: extrai metadados EXIF usando exiftool (câmara, ISO, abertura, etc.)
+Gere o ficheiro photos.json como base de dados
+
+
+=== FRONTEND ===
+
+=== frontend/eslint.config.js ===
+[cole todo o código aqui]
+
+=== frontend/index.html ===
+Página HTML base que:
+Carrega Tailwind CSS via CDN
+Contém o elemento <div id="root"> onde o React renderiza
+
+=== frontend/package.json ===
+Dependências do frontend:
+
+react + react-dom: biblioteca UI
+vite: build tool rápido
+Scripts: dev (desenvolvimento), build (produção)
+
+=== frontend/vite.config.js ===
+Configuração do Vite com proxy para encaminhar /api e /photos para o backend (porta 3000).
+
+=== frontend/src/App.css ===
+Este ficheiro não é importado em lado nenhum. Todo o styling é feito via Tailwind.
+PODE SER ELIMINADO
+
+=== frontend/src/App.jsx ===
+Componente principal que:
+Gere o estado global (fotos, autenticação, modais)
+Carrega fotos da API
+Implementa funcionalidades de adicionar/editar/eliminar
+Controla pesquisa e filtros por categoria
+Orquestra todos os componentes
+
+=== frontend/src/index.css ===
+Estilos globais base (reset CSS, fontes, cores).
+
+=== frontend/src/main.jsx ===
+Ponto de entrada do React. Renderiza o componente <App /> no DOM.
+
+=== frontend/src/components/AddEditModal.jsx ===
+Modal para adicionar/editar fotos que:
+Formulário com todos os campos (título, categoria, local, descrição)
+Botão "Ler Dados EXIF" que extrai metadados automaticamente
+Campos EXIF são read-only (só preenchidos via extração)
+Reutilizável para adicionar e editar
+
+=== frontend/src/components/AuthModal.jsx ===
+Modal de autenticação simples:
+Password hardcoded: 12345
+Controla acesso às funções de gestão (adicionar/editar/eliminar)
+
+=== frontend/src/components/PhotoGrid.jsx ===
+Grelha de fotos que:
+Exibe miniaturas em layout responsivo
+Implementa pesquisa e filtro por categoria
+Mostra mensagem quando não há fotos
+
+=== frontend/src/components/PhotoModal.jsx ===
+Modal de visualização detalhada que mostra:
+Imagem em grande
+Metadados EXIF (abertura, ISO, velocidade, focal)
+Informações (local, data, hora, câmara, lente)
+Botões de editar/eliminar (se autenticado)
+Modo ecrã inteiro
+
+
+┌─────────────┐
+│   Browser   │
+└──────┬──────┘
+       │
+┌──────▼──────────────┐
+│   React Frontend    │
+│  (Vite dev: 5173)   │
+└──────┬──────────────┘
+       │ proxy /api, /photos
+┌──────▼──────────────┐
+│  Express Backend    │
+│   (Node: 3000)      │
+└──────┬──────────────┘
+       │
+┌──────▼──────────────┐
+│   photos.json       │ ← Base de dados
+│   /photos/*.jpg     │ ← Imagens físicas
+└─────────────────────┘
