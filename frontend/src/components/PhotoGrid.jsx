@@ -16,32 +16,38 @@ export default function PhotoGrid({ photos, onPhotoClick }) {
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6 mx-auto max-w-[1920px]">
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 mx-auto max-w-[1920px]">
       {photoList.map(photo => {
         const imageUrl = `${photo.imageUrl}?t=${photo.timestamp || Date.now()}`
-        
+
         return (
           <div
             key={photo.id}
             onClick={() => onPhotoClick(photo)}
-            className="group cursor-pointer bg-gray-800 rounded-lg overflow-hidden shadow-lg hover:shadow-2xl transition-all transform hover:scale-105"
+            className="group cursor-pointer bg-gray-800 rounded-lg overflow-hidden shadow-lg hover:shadow-2xl transition-all transform hover:scale-[1.02]"
           >
-            <div className="aspect-w-16 aspect-h-12 bg-gray-700 relative overflow-hidden">
+            <div className="relative overflow-hidden">
               <img
                 src={imageUrl}
                 alt={photo.title}
-                className="w-full h-48 object-cover group-hover:scale-110 transition-transform duration-300"
+                className="w-full h-56 object-cover group-hover:scale-105 transition-transform duration-300"
               />
+              {/* Título SOBRE a imagem REMOVIDO */}
             </div>
             <div className="p-4">
-              <h3 className="text-white font-semibold text-lg mb-2">{photo.title}</h3>
-              {photo.location && (
-                <div className="flex items-center text-gray-400 text-sm space-x-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  <span>{photo.location}</span>
+              <h3 className="text-white font-semibold text-base mb-2 truncate">{photo.title}</h3>
+              {photo.categories && photo.categories.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {photo.categories.slice(0, 3).map(cat => (
+                    <span key={cat} className="px-2 py-1 bg-blue-600 text-white text-xs rounded-full whitespace-nowrap">
+                      {cat}
+                    </span>
+                  ))}
+                  {photo.categories.length > 3 && (
+                    <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">
+                      +{photo.categories.length - 3}
+                    </span>
+                  )}
                 </div>
               )}
             </div>

@@ -1,9 +1,10 @@
 // ========================================
-// frontend/src/App.jsx - VERSÃO COMPLETA COM SCAN DE PASTAS
+// frontend/src/App.jsx - COM FULLSCREEN E MODAL SEPARADOS
 // ========================================
 import { useState, useEffect } from 'react'
 import PhotoGrid from './components/PhotoGrid'
 import PhotoModal from './components/PhotoModal'
+import PhotoFullscreen from './components/PhotoFullscreen'
 import AddEditModal from './components/AddEditModal'
 import AuthModal from './components/AuthModal'
 import ManageCollectionsModal from './components/ManageCollectionsModal'
@@ -18,6 +19,7 @@ export default function App() {
   const [authenticated, setAuthenticated] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [selectedPhoto, setSelectedPhoto] = useState(null)
+  const [showFullscreen, setShowFullscreen] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingPhoto, setEditingPhoto] = useState(null)
@@ -135,7 +137,7 @@ export default function App() {
       const updatedPhoto = await res.json()
       setPhotos(photos.map(p => p.id === updatedPhoto.id ? updatedPhoto : p))
       setShowEditModal(false)
-      setSelectedPhoto(updatedPhoto)
+      setSelectedPhoto(null)
       loadCollections()
     } catch (error) {
       console.error('Erro ao editar foto:', error)
@@ -150,6 +152,7 @@ export default function App() {
       await fetch(`/api/photos/${id}`, { method: 'DELETE' })
       setPhotos(photos.filter(p => p.id !== id))
       setSelectedPhoto(null)
+      setShowFullscreen(false)
       loadCollections()
     } catch (error) {
       console.error('Erro ao eliminar foto:', error)
@@ -157,10 +160,62 @@ export default function App() {
     }
   }
 
+  const handleToggleFavorite = async (photoId) => {
+    try {
+      const photo = photos.find(p => p.id === photoId)
+      if (!photo) return
+
+      const updatedPhoto = { ...photo, isFavorite: !photo.isFavorite }
+      
+      const res = await fetch('/api/photos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedPhoto)
+      })
+      
+      const savedPhoto = await res.json()
+      setPhotos(photos.map(p => p.id === photoId ? savedPhoto : p))
+      
+      // Atualizar foto selecionada se for a mesma
+      if (selectedPhoto?.id === photoId) {
+        setSelectedPhoto(savedPhoto)
+      }
+      
+      console.log(`${savedPhoto.isFavorite ? '❤️' : '🤍'} Favorito atualizado: ${savedPhoto.title}`)
+    } catch (error) {
+      console.error('Erro ao atualizar favorito:', error)
+      alert('Erro ao atualizar favorito')
+    }
+  }
+
+  const handlePhotoClick = (photo) => {
+  setSelectedPhoto(photo);
+  setShowFullscreen(false); // Abre no modal primeiro
+};
+
+const handleOpenFullscreen = (photo) => {
+  setSelectedPhoto(photo); // Garante que a foto correta está selecionada
+  setShowFullscreen(true);
+};
+
+  const handleBackToModal = () => {
+    setShowFullscreen(false)
+  }
+
+  const handleNavigatePhoto = (photo) => {
+    setSelectedPhoto(photo)
+  }
+
   const openEditModal = (photo) => {
     setEditingPhoto(photo)
     setShowEditModal(true)
     setSelectedPhoto(null)
+    setShowFullscreen(false)
+  }
+
+  const openInfoModal = () => {
+    setShowFullscreen(false)
+    // selectedPhoto já está definido, apenas troca de fullscreen para modal
   }
 
   const handleChangeCollection = async (collectionId) => {
@@ -195,7 +250,7 @@ export default function App() {
     setFilterCollection(collectionId)
   }
 
-    const handleSync = async () => {
+  const handleSync = async () => {
     setShowManageMenu(false)
     if (window.confirm('🔄 Sincronizar pastas e fotos?\n\n• Cria coleções para pastas novas\n• Remove coleções de pastas eliminadas\n• Adiciona fotos novas automaticamente\n• Remove fotos de ficheiros eliminados')) {
       try {
@@ -230,7 +285,7 @@ export default function App() {
         }
         
         alert(message)
-        loadInitialData() // Recarrega tudo
+        loadInitialData()
       } catch (error) {
         alert('❌ Erro ao sincronizar')
         console.error(error)
@@ -321,7 +376,6 @@ export default function App() {
                     
                     {showManageMenu && (
                       <div className="absolute right-0 mt-2 w-56 bg-gray-800 rounded-lg shadow-xl border border-gray-700 py-2 z-50">
-                        {/* Gerir Coleções */}
                         <button
                           onClick={() => {
                             setShowManageCollections(true)
@@ -332,7 +386,6 @@ export default function App() {
                           <span>📁</span>
                           <span>Gerir Coleções</span>
                         </button>
-                        {/* Gerir Categorias */}
                         <button
                           onClick={() => {
                             setShowManageCategories(true)
@@ -343,10 +396,10 @@ export default function App() {
                           <span>🏷️</span>
                           <span>Gerir Categorias</span>
                         </button>
-                        {/* Sincronizar */}
+                        {/* Sincronizar Tudo */}
                         <button
                           onClick={handleSync}
-                          className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2 border-t border-gray-600"
+                          className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2 border-t border-gray-600 mt-2"
                         >
                           <span>🔄</span>
                           <span>Sincronizar Tudo</span>
@@ -445,18 +498,66 @@ export default function App() {
       <div className="max-w-[1920px] mx-auto px-4 pb-12 sm:px-6 lg:px-8">
         <PhotoGrid 
           photos={filteredPhotos} 
-          onPhotoClick={setSelectedPhoto}
+          onPhotoClick={handlePhotoClick}
         />
       </div>
 
+      {/* Footer */}
+
+      <footer className="mt-12 pb-6 px-4 sm:px-6 lg:px-8 text-center text-gray-400 text-sm">
+        <div className="max-w-[1920px] mx-auto flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-4">
+          
+          <div>© {new Date().getFullYear()} Paulo Pinhal.</div>
+          
+          <div>Todos os direitos reservados.</div>
+          
+          <div>
+            <a 
+              href="mailto:paulojspinhal@gmail.com" 
+              className="hover:text-white transition-colors underline-offset-2 hover:underline"
+              title="Enviar email"
+            >
+              sys.pjsp@gmail.com
+            </a>
+          </div>
+          
+          <button
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="text-gray-500 hover:text-white transition-colors p-1 ml-2"
+            title="Voltar ao topo"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+          </button>
+        </div>
+      </footer>          
+
       {/* Modals */}
-      {selectedPhoto && (
+      {/* Modal de detalhes da foto */}
+      {selectedPhoto && !showFullscreen && (
         <PhotoModal 
           photo={selectedPhoto}
           onClose={() => setSelectedPhoto(null)}
           onEdit={() => openEditModal(selectedPhoto)}
           onDelete={() => handleDeletePhoto(selectedPhoto.id)}
+          onOpenFullscreen={handleOpenFullscreen}
           authenticated={authenticated}
+        />
+      )}
+
+      {/* Visualização em fullscreen */}
+      {showFullscreen && selectedPhoto && (
+        <PhotoFullscreen
+          photo={selectedPhoto}
+          photos={filteredPhotos}
+          onClose={() => {
+            setShowFullscreen(false);
+            setSelectedPhoto(null);
+          }}
+          onToggleFavorite={handleToggleFavorite}
+          onNavigate={handleNavigatePhoto}
+          onBackToModal={handleBackToModal}
         />
       )}
 
