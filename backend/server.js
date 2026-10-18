@@ -757,6 +757,48 @@ app.get('/api/exif', (req, res) => {
 });
 
 // ========================================
+// ROTAS - AUTENTICAÇÃO (LOGIN)
+// ========================================
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+
+    const ADMIN_USER = process.env.ADMIN_USER;
+    const ADMIN_PASS = process.env.ADMIN_PASS;
+
+    if (username === ADMIN_USER && password === ADMIN_PASS) {
+        res.status(200).json({ success: true, message: "Login bem-sucedido!" });
+    } else {
+        res.status(401).json({ success: false, message: "Credenciais inválidas" });
+    }
+});
+
+// ========================================
+// ROTA - SINCRONIZAR COM GOOGLE DRIVE (rclone)
+// ========================================
+app.post('/api/sync-drive/:collectionName', (req, res) => {
+    const { collectionName } = req.params;
+    
+    // Caminho para o ficheiro de config dentro do Docker
+    const RCLONE_CONF = '/dados_privados/rclone.conf';
+    
+    // Comando rclone. (Adjusta "gdrive:" e "fotos-site" se os nomes forem diferentes)
+    const command = `rclone sync "gdrive:fotos-site/${collectionName}" "/dados_privados/fotos_gdrive/${collectionName}" --config ${RCLONE_CONF} -v`;
+
+    console.log("A executar comando:", command);
+    
+    exec(command, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`❌ Erro no rclone: ${stderr || error.message}`);
+            return res.status(500).json({ error: 'Erro ao sincronizar com o Google Drive.' });
+        }
+        
+        console.log(`☁️ Rclone concluído para: ${collectionName}`);
+        res.json({ success: true, message: `Sincronização da coleção ${collectionName} concluída!` });
+    });
+});
+
+
+// ========================================
 // INICIA O SERVIDOR
 // ========================================
 initDataFiles().then(() => {

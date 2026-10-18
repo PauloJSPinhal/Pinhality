@@ -293,6 +293,42 @@ const handleOpenFullscreen = (photo) => {
     }
   }
 
+  const handleSyncDrive = async () => {
+    setShowManageMenu(false)
+    
+    // Se estiver a ver "Todas as Coleções", não sabemos qual sincronizar
+    if (filterCollection === 'all' || !filterCollection) {
+      alert('⚠️ Por favor, selecione uma coleção específica no menu pendente antes de sincronizar com o Google Drive.')
+      return
+    }
+
+    if (window.confirm(`☁️ Sincronizar a coleção "${filterCollection}" com o Google Drive?\n\nIsto irá baixar as fotos mais recentes do Drive para o servidor.`)) {
+      try {
+        // 1. Chama o rclone no backend
+        const res = await fetch(`/api/sync-drive/${filterCollection}`, { method: 'POST' })
+        const data = await res.json()
+
+        if (!res.ok) {
+          alert('❌ Erro: ' + (data.error || 'Falha no rclone'))
+          return
+        }
+
+        // 2. Após o rclone terminar, atualiza a Base de Dados local (faz o scan)
+        alert('✅ Download do Drive concluído! A atualizar a Base de Dados...')
+        const resSync = await fetch('/api/sync')
+        const dataSync = await resSync.json()
+        
+        let message = `✅ Base de dados atualizada!\n\n📸 Novas fotos: ${dataSync.photos.new}\n🗑️ Removidas: ${dataSync.photos.removed}`
+        alert(message)
+        
+        loadInitialData() // Recarrega as fotos no ecrã
+      } catch (error) {
+        alert('❌ Erro de ligação ao servidor durante a sincronização.')
+        console.error(error)
+      }
+    }
+  }
+
   // Filtrar fotos
   const filteredPhotos = photos.filter(photo => {
     // Pesquisa em múltiplas categorias
@@ -396,13 +432,23 @@ const handleOpenFullscreen = (photo) => {
                           <span>🏷️</span>
                           <span>Gerir Categorias</span>
                         </button>
-                        {/* Sincronizar Tudo */}
+
+                        {/* Sincronizar com Google Drive (rclone) */}
                         <button
-                          onClick={handleSync}
+                          onClick={handleSyncDrive}
                           className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2 border-t border-gray-600 mt-2"
                         >
-                          <span>🔄</span>
-                          <span>Sincronizar Tudo</span>
+                          <span>☁️</span>
+                          <span>Sincronizar</span>
+                        </button>
+
+                        {/* "Atualizar BD" */}
+                        <button
+                          onClick={handleSync}
+                          className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
+                        >
+                          <span>💾</span>
+                          <span>Atualizar BD</span>
                         </button>
                       </div>
                     )}
@@ -470,9 +516,9 @@ const handleOpenFullscreen = (photo) => {
             onChange={(e) => handleChangeCollection(e.target.value)}
             className="px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="all">🌍 Todas as Coleções ({photos.length})</option>
+            <option value="all" className="text-sm">🌍 Todas as Coleções ({photos.length})</option>
             {collections.map(col => (
-              <option key={col.id} value={col.id}>
+              <option key={col.id} value={col.id} className="text-sm">
                 {authenticated && col.id === activeCollectionId ? '⭐ ' : ''}📁 {col.name} ({photosPerCollection[col.id] || 0})
               </option>
             ))}
@@ -484,9 +530,9 @@ const handleOpenFullscreen = (photo) => {
             onChange={(e) => setFilterCategory(e.target.value)}
             className="px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="todas">🏷️ Todas as Categorias ({photos.length})</option>
+            <option value="todas" className="text-sm">🏷️ Todas as Categorias ({photos.length})</option>
             {categories.map(cat => (
-              <option key={cat} value={cat}>
+              <option key={cat} value={cat} className="text-sm">
                 {cat} ({photosPerCategory[cat] || 0})
               </option>
             ))}

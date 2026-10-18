@@ -28,9 +28,12 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    env_file:
+      - ../dados_privados/.env
     volumes:
       - ./backend:/app
       - /app/node_modules
       # LIGAÇÃO DAS FOTOS PARA O BACKEND (Para ele conseguir fazer o scan)
       # Liga a pasta dados_privados ao caminho /dados_privados dentro do Docker
       - ../dados_privados:/dados_privados
+
