@@ -30,6 +30,7 @@ export default function App() {
   const [showManageCategories, setShowManageCategories] = useState(false)
   const [showManageMenu, setShowManageMenu] = useState(false)
   const [filterDate, setFilterDate] = useState('all')
+  const [filterMonth, setFilterMonth] = useState('all')
 
   useEffect(() => {
     loadInitialData()
@@ -349,8 +350,11 @@ const handleOpenFullscreen = (photo) => {
     
     const matchesCollection = filterCollection === 'all' || photo.collection === filterCollection
     
-    const matchesDate = filterDate === 'all' || (photo.date && photo.date.startsWith(filterDate));
-    
+    // Lógica de cascata: Ano + Mês
+    let matchesDate = filterDate === 'all' || (photo.date && photo.date.startsWith(filterDate));
+    if (matchesDate && filterMonth !== 'all') {
+      matchesDate = photo.date && photo.date.substring(5, 7) === filterMonth;
+    }
     return matchesSearch && matchesCategory && matchesCollection && matchesDate
   })
 
@@ -370,9 +374,31 @@ const handleOpenFullscreen = (photo) => {
 
   const activeCollectionName = collections.find(c => c.id === activeCollectionId)?.name || null
 
+  
   const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
-  const availableDates = photos.reduce((acc, photo) => {
+  // Fotos pré-filtradas (sem o filtro de data) para calcular datas disponíveis
+  const preFilteredPhotos = photos.filter(photo => {
+    const categoriesString = Array.isArray(photo.categories) 
+      ? photo.categories.join(' ').toLowerCase() 
+      : (photo.category || '').toLowerCase();
+    
+    const matchesSearch = photo.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         categoriesString.includes(searchTerm.toLowerCase()) ||
+                         (photo.location && photo.location.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                         (photo.description && photo.description.toLowerCase().includes(searchTerm.toLowerCase()))
+    
+    const matchesCategory = filterCategory === 'todas' || 
+                           (Array.isArray(photo.categories) && photo.categories.includes(filterCategory)) ||
+                           photo.category === filterCategory;
+    
+    const matchesCollection = filterCollection === 'all' || photo.collection === filterCollection
+    
+    return matchesSearch && matchesCategory && matchesCollection
+  });
+
+  // Extrair anos e meses das fotos pré-filtradas (dependentes de coleção/categoria)
+  const availableDates = preFilteredPhotos.reduce((acc, photo) => {
     if (photo.date && photo.date.length >= 4) {
       const year = photo.date.substring(0, 4);
       if (!acc[year]) acc[year] = new Set();
@@ -384,6 +410,16 @@ const handleOpenFullscreen = (photo) => {
   }, {});
 
   const sortedYears = Object.keys(availableDates).sort((a, b) => b.localeCompare(a));
+
+  // Reset automático: se o ano selecionado já não existe, volta para 'all'
+  if (filterDate !== 'all' && !availableDates[filterDate]) {
+    setFilterDate('all')
+    setFilterMonth('all')
+  }
+  // Se o mês selecionado já não existe no ano atual, volta para 'all'
+  if (filterDate !== 'all' && filterMonth !== 'all' && !availableDates[filterDate].has(filterMonth)) {
+    setFilterMonth('all')
+  }
 
   if (loading) {
     return (
@@ -556,24 +592,36 @@ const handleOpenFullscreen = (photo) => {
             ))}
           </select>
 
-          {/* Seletor de Datas (Ano/Mês) */}
+          {/* Seletor de ANO (depende de coleção/categoria) */}
           <select
             value={filterDate}
-            onChange={(e) => setFilterDate(e.target.value)}
+            onChange={(e) => {
+              setFilterDate(e.target.value)
+              setFilterMonth('all')
+            }}
             className="px-3 py-2 sm:px-4 sm:py-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="all" className="text-sm">📅 Todas as Datas ({photos.length})</option>
+            <option value="all" className="text-sm">📅 Todas as Datas</option>
             {sortedYears.map(year => (
-              <optgroup key={year} label={year} className="text-sm">
-                <option value={year} className="text-sm">📅 Todo o ano {year}</option>
-                {[...availableDates[year]].sort((a,b) => b.localeCompare(a)).map(month => (
-                  <option key={`${year}-${month}`} value={`${year}-${month}`} className="text-sm">
-                    {monthNames[parseInt(month) - 1]} {year}
-                  </option>
-                ))}
-              </optgroup>
+              <option key={year} value={year} className="text-sm">📅 {year}</option>
             ))}
           </select>
+
+          {/* Seletor de MÊS (só aparece se um ano estiver escolhido) */}
+          {filterDate !== 'all' && (
+            <select
+              value={filterMonth}
+              onChange={(e) => setFilterMonth(e.target.value)}
+              className="px-3 py-2 sm:px-4 sm:py-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all" className="text-sm">🗓️ Todos os Meses</option>
+              {[...availableDates[filterDate]].sort((a,b) => a.localeCompare(b)).map(month => (
+                <option key={month} value={month} className="text-sm">
+                  🗓️ {monthNames[parseInt(month) - 1]}
+                </option>
+              ))}
+            </select>
+          )}
 
 
         </div>
