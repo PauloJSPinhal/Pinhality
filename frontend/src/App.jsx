@@ -36,21 +36,6 @@ export default function App() {
     loadInitialData()
   }, [])
 
-  // Entrar em fullscreen automaticamente ao carregar a app
-  useEffect(() => {
-    const enterFullscreen = async () => {
-      try {
-        if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
-          await document.documentElement.requestFullscreen()
-        }
-      } catch (err) {
-        console.log('Fullscreen não disponível:', err)
-      }
-    }
-    
-    enterFullscreen()
-  }, [])
-
   const loadInitialData = async () => {
     await Promise.all([
       loadPhotos(),

@@ -13,34 +13,19 @@ export default function PhotoFullscreen({
 }) {
   const containerRef = useRef(null);
 
-  // Função para entrar em fullscreen (nativo)
   const enterFullscreen = async () => {
     if (!containerRef.current) return;
-
     try {
       if (containerRef.current.requestFullscreen) {
         await containerRef.current.requestFullscreen();
       } else if (containerRef.current.webkitRequestFullscreen) {
-        // Safari/iOS fallback
         containerRef.current.webkitRequestFullscreen();
-      } else {
-        // Fallback: modo "pseudo-fullscreen" com scroll-to-top
-        document.body.classList.add('fullscreen-fallback');
-        document.documentElement.style.height = '100%';
-        document.body.style.height = '100%';
-        window.scrollTo(0, 1);
-        // Forçar layout
-        setTimeout(() => window.scrollTo(0, 1), 100);
       }
     } catch (err) {
       console.warn('Fullscreen não disponível:', err);
-      // Usa fallback mesmo assim
-      document.body.classList.add('fullscreen-fallback');
-      window.scrollTo(0, 1);
     }
   };
 
-  // Sair do fullscreen ao desmontar
   const exitFullscreen = async () => {
     if (document.fullscreenElement || document.webkitFullscreenElement) {
       try {
@@ -53,12 +38,8 @@ export default function PhotoFullscreen({
         console.warn('Erro ao sair do fullscreen:', err);
       }
     }
-    document.body.classList.remove('fullscreen-fallback');
-    document.documentElement.style.height = '';
-    document.body.style.height = '';
   };
 
-  // Teclas de atalho
   useEffect(() => {
     const handleKeyPress = (e) => {
       if (e.key === 'Escape') {
@@ -77,7 +58,6 @@ export default function PhotoFullscreen({
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [photo, photos, onNavigate, onClose]);
 
-  // Entrar em fullscreen ao montar
   useEffect(() => {
     enterFullscreen();
     return () => {
@@ -107,7 +87,35 @@ export default function PhotoFullscreen({
         draggable={false}
       />
 
-      {/* Botões de ação (superior direito) */}
+      {/* Botões de NAVEGAÇÃO (superior esquerdo) */}
+      <div 
+        className="absolute top-6 left-6 flex gap-3 z-50"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Voltar ao modal de informações (02) */}
+        <button
+          onClick={onBackToModal}
+          className="p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white transition-all hover:scale-110"
+          title="Voltar às informações"
+        >
+          <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+
+        {/* Fechar e voltar à grelha (01) */}
+        <button
+          onClick={onClose}
+          className="p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white transition-all hover:scale-110"
+          title="Fechar e voltar à galeria"
+        >
+          <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Botão de FAVORITO (superior direito) */}
       <div 
         className="absolute top-6 right-6 flex gap-3 z-50"
         onClick={(e) => e.stopPropagation()}
@@ -127,19 +135,9 @@ export default function PhotoFullscreen({
             </svg>
           )}
         </button>
-
-        <button
-          onClick={onBackToModal}
-          className="p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white transition-all hover:scale-110"
-          title="Ver informações"
-        >
-          <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </button>
       </div>
 
-      {/* Navegação */}
+      {/* Navegação entre fotos (setas laterais) */}
       {hasPrevious && (
         <button
           onClick={(e) => {
@@ -169,23 +167,15 @@ export default function PhotoFullscreen({
         </button>
       )}
 
-      {/* Título + contador */}
-      <div 
-        className="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex flex-col items-center z-50"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {photos.length > 1 && (
-          <div className="mb-2 bg-black bg-opacity-50 text-white px-4 py-1.5 rounded-full text-sm font-medium">
-            {currentIndex + 1} / {photos.length}
-          </div>
-        )}
-        <div className="bg-black bg-opacity-60 text-white px-4 py-2 rounded-lg max-w-md text-center">
-          <h3 className="font-semibold">{photo.title}</h3>
-          {photo.location && (
-            <p className="text-sm text-gray-300 mt-1">{photo.location}</p>
-          )}
+      {/* Contador discreto (canto inferior direito) */}
+      {photos.length > 1 && (
+        <div 
+          className="absolute bottom-6 right-6 bg-black bg-opacity-50 text-white px-3 py-1.5 rounded-full text-xs font-medium z-50"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {currentIndex + 1} / {photos.length}
         </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -28,6 +28,18 @@ export default function PhotoModal({ photo, onClose, onEdit, onDelete, onOpenFul
           {/* Painel de Informações — SCROLL FUNCIONAL EM MOBILE */}
           <div className="bg-gray-800 rounded-lg p-4 sm:p-6 flex flex-col min-h-0 max-h-[70vh] sm:max-h-[80vh] overflow-y-auto">
             
+            {/* Botão Voltar — AGORA NO TOPO (entre a foto e o texto) */}
+            <button
+              onClick={onClose}
+              className="w-full mb-4 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center justify-center"
+              title="Voltar à Galeria"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              <span className="ml-2">Voltar à Galeria</span>
+            </button>
+
             <h2 className="text-xl font-bold text-white mb-3">{photo.title}</h2>
 
             {photo.description && (
@@ -123,7 +135,7 @@ export default function PhotoModal({ photo, onClose, onEdit, onDelete, onOpenFul
             {/* Empurrar botões para o fundo */}
             <div className="flex-1"></div>
 
-            {/* Botões de ação */}
+            {/* Botões de ação (Editar / Eliminar) */}
             {authenticated && (
               <div className="flex gap-2 pt-3">
                 <button
@@ -148,20 +160,6 @@ export default function PhotoModal({ photo, onClose, onEdit, onDelete, onOpenFul
                 </button>
               </div>
             )}
-            
-            {/* Botão Voltar — SEMPRE visível */}
-            <div className="mt-3">
-              <button
-                onClick={onClose}
-                className="w-full px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center justify-center"
-                title="Voltar à Galeria"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                </svg>
-                <span className="ml-2 hidden sm:inline">Voltar</span>
-              </button>
-            </div>
           </div>
         </div>
       </div>
