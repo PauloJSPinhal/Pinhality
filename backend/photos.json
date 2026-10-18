@@ -488,34 +488,6 @@
     "id": 1760866575740
   },
   {
-    "title": "Meu carro e Lili",
-    "imageUrl": "photos/passeio-com-lili/imagem03.jpg",
-    "categories": [
-      "Natureza"
-    ],
-    "collection": "passeio-com-lili",
-    "location": "Porto",
-    "date": "2008-11-16",
-    "time": "17:14:16",
-    "aperture": "4.0",
-    "iso": "200",
-    "shutterSpeed": "1/30",
-    "focalLength": "25.0",
-    "camera": "Canon EOS 350D DIGITAL",
-    "lens": "",
-    "exposureMode": "Prioridade Velocidade",
-    "meteringMode": "Matricial",
-    "exposureCompensation": "+2.0 EV",
-    "whiteBalance": "Cloudy",
-    "focusMode": "AI Servo AF",
-    "copyright": "manifestacao-cgtp-in/© Paulo Pinhal 2025",
-    "gpsLatitude": "",
-    "gpsLongitude": "",
-    "description": "FUNCIONA",
-    "timestamp": 1761103805487,
-    "id": 1760876438104
-  },
-  {
     "title": "Porta",
     "imageUrl": "photos/passeio-com-lili/imagem02.jpg",
     "categories": [
@@ -542,5 +514,46 @@
     "description": "2222",
     "timestamp": 1761103819078,
     "id": 1760847168584
+  },
+  {
+    "title": "Meu carro e Lili",
+    "imageUrl": "photos/passeio-com-lili/imagem03.jpg",
+    "categories": [
+      "Natureza"
+    ],
+    "collection": "passeio-com-lili",
+    "location": "Porto",
+    "date": "2008-11-16",
+    "time": "17:14:16",
+    "aperture": "4.0",
+    "iso": "200",
+    "shutterSpeed": "1/30",
+    "focalLength": "25.0",
+    "camera": "Canon EOS 350D DIGITAL",
+    "lens": "",
+    "exposureMode": "Prioridade Velocidade",
+    "meteringMode": "Matricial",
+    "exposureCompensation": "+2.0 EV",
+    "whiteBalance": "Cloudy",
+    "focusMode": "AI Servo AF",
+    "copyright": "manifestacao-cgtp-in/© Paulo Pinhal 2025",
+    "gpsLatitude": "",
+    "gpsLongitude": "",
+    "description": "FUNCIONA",
+    "timestamp": 1761103805487,
+    "id": 1760876438104,
+    "isFavorite": false
+  },
+  {
+    "id": 1792287641249.3943,
+    "title": "20261017100949C0",
+    "imageUrl": "photos/noturnas/20261017100949C0.JPG",
+    "collection": "noturnas",
+    "categories": [],
+    "location": "",
+    "date": "",
+    "time": "",
+    "description": "Adicionada automaticamente - editar para completar",
+    "timestamp": 1792287641249
   }
 ]

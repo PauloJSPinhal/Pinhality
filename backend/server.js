@@ -9,6 +9,9 @@ const { exec } = require('child_process');
 
 const app = express();
 const PORT = 3000;
+// O CAMINHO DAS FOTOS (Mapeado no docker-compose.yml)
+const PHOTOS_DIR = '/dados_privados/fotos_gdrive';
+
 const DATA_FILE = path.join(__dirname, 'photos.json');
 const COLLECTIONS_FILE = path.join(__dirname, 'collections.json');
 const CATEGORIES_FILE = path.join(__dirname, 'categories.json');
@@ -17,6 +20,8 @@ const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+// Servir as fotos diretamente da nova pasta privada
+app.use('/photos', express.static(PHOTOS_DIR));
 app.use(express.static('public'));
 
 // ========================================
@@ -90,7 +95,7 @@ app.put('/api/settings/active-collection', async (req, res) => {
 
 app.get('/api/sync', async (req, res) => {
   try {
-    const photosDir = path.join(__dirname, 'public', 'photos');
+    const photosDir = PHOTOS_DIR;
     
     // FASE 1: ESCANEAR PASTAS E CRIAR COLEÇÕES
     const items = await fs.readdir(photosDir, { withFileTypes: true });
@@ -187,7 +192,7 @@ app.get('/api/sync', async (req, res) => {
     // Remover fotos cujos ficheiros já não existem
     const validPhotos = [];
     for (const photo of photos) {
-      const filePath = path.join(__dirname, 'public', photo.imageUrl);
+       const filePath = path.join(PHOTOS_DIR, photo.imageUrl.replace(/^photos\//, ''));
       try {
         await fs.access(filePath);
         validPhotos.push(photo);
@@ -226,7 +231,7 @@ app.get('/api/sync', async (req, res) => {
 
 app.get('/api/collections/scan', async (req, res) => {
   try {
-    const photosDir = path.join(__dirname, 'public', 'photos');
+    const photosDir = PHOTOS_DIR;
     
     const items = await fs.readdir(photosDir, { withFileTypes: true });
     const folders = items
@@ -620,8 +625,8 @@ app.get('/api/exif', (req, res) => {
     return res.status(400).json({ error: 'Caminho inválido' });
   }
   
-  const fullPath = path.join(__dirname, 'public', cleanImagePath);
-  const command = `/usr/bin/exiftool -j -DateTimeOriginal -ISOSpeedRatings -ISO -FNumber -ExposureTime -FocalLength -Make -Model -LensModel -ExposureProgram -MeteringMode -ExposureCompensation -WhiteBalance -FocusMode -Copyright -GPSLatitude -GPSLongitude -GPSLatitudeRef -GPSLongitudeRef "${fullPath}"`;
+  const fullPath = path.join(PHOTOS_DIR, cleanImagePath.replace(/^photos\//, ''));
+  const command = `exiftool -j -DateTimeOriginal -ISOSpeedRatings -ISO -FNumber -ExposureTime -FocalLength -Make -Model -LensModel -ExposureProgram -MeteringMode -ExposureCompensation -WhiteBalance -FocusMode -Copyright -GPSLatitude -GPSLongitude -GPSLatitudeRef -GPSLongitudeRef "${fullPath}"`;
   
   exec(command, (error, stdout, stderr) => {
     if (error) {

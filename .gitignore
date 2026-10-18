@@ -8,10 +8,10 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.env
+dados_privados
 backend/node_modules
 frontend/node_modules
-
-readme
 
 backend/dist
 frontend/dist
@@ -32,3 +32,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Ignorar pastas de fotos e symlinks
+backend/public/photos
+frontend/public/photos
+
+# Ignorar ficheiros temporários
+*.txt
