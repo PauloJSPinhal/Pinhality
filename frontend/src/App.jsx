@@ -564,16 +564,14 @@ const handleOpenFullscreen = (photo) => {
           >
             <option value="all" className="text-sm">📅 Todas as Datas ({photos.length})</option>
             {sortedYears.map(year => (
-              <option key={year} value={year} className="text-sm">
-                📅 {year}
-              </option>
-            ))}
-            {sortedYears.map(year => (
-              [...availableDates[year]].sort((a,b) => b.localeCompare(a)).map(month => (
-                <option key={`${year}-${month}`} value={`${year}-${month}`} className="text-sm">
-                  📅 {monthNames[parseInt(month) - 1]} {year}
-                </option>
-              ))
+              <optgroup key={year} label={year} className="text-sm">
+                <option value={year} className="text-sm">📅 Todo o ano {year}</option>
+                {[...availableDates[year]].sort((a,b) => b.localeCompare(a)).map(month => (
+                  <option key={`${year}-${month}`} value={`${year}-${month}`} className="text-sm">
+                    {monthNames[parseInt(month) - 1]} {year}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
 
