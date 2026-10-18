@@ -1,39 +1,47 @@
+# Compose para o Coolify (produção).
+# - Sem portas publicadas: o Coolify encaminha o domínio para o serviço "web" (porta 80).
+# - Sem caminhos fora do repositório (../dados_privados não existe no servidor do Coolify).
+# - Dados e fotos ficam em volumes nomeados, que sobrevivem a novos deploys.
+# - Variáveis (ADMIN_USER, ADMIN_PASS) definem-se no separador "Environment Variables" do Coolify.
 services:
   web:
-    build: 
+    build:
       context: ./frontend
       dockerfile: Dockerfile
-    ports:
-      - "5173:5173"
-    volumes:
-      # Mapeia o teu código fonte para atualizar em tempo real    
-      - ./frontend:/app
-      
-      # Isola o node_modules para não ser substituído
-      - /app/node_modules
-      
-      # A LIGAÇÃO DAS FOTOS:
-      # Lado esquerdo: A pasta no servidor
-      # Lado direito: O caminho dentro do Docker onde o React as vai ler
-      - ../dados_privados/fotos_gdrive:/app/public/photos
-    environment:
-      - CHOKIDAR_USEPOLLING=true
-      - WATCHPACK_POLLING=true
+    expose:
+      - "80"
     depends_on:
-      - backend # O frontend só arranca depois do backend
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      - SERVICE_FQDN_WEB_80
 
   backend:
-    build: 
+    build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    env_file:
-      - ../dados_privados/.env
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATA_DIR=/data
+      - ADMIN_USER=${ADMIN_USER:?Define ADMIN_USER no Coolify}
+      - ADMIN_PASS=${ADMIN_PASS:?Define ADMIN_PASS no Coolify}
     volumes:
-      - ./backend:/app
-      - /app/node_modules
-      # LIGAÇÃO DAS FOTOS PARA O BACKEND (Para ele conseguir fazer o scan)
-      # Liga a pasta dados_privados ao caminho /dados_privados dentro do Docker
-      - ../dados_privados:/dados_privados
+      # photos.json, collections.json, categories.json, settings.json
+      - pinhality-data:/data
+      # fotos_gdrive/ e rclone.conf (o mesmo caminho que o server.js já usa)
+      - pinhality-privado:/dados_privados
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/settings"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
+volumes:
+  pinhality-data:
+  pinhality-privado:

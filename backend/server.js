@@ -8,14 +8,17 @@ const cors = require('cors');
 const { exec } = require('child_process');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 // O CAMINHO DAS FOTOS (Mapeado no docker-compose.yml)
 const PHOTOS_DIR = '/dados_privados/fotos_gdrive';
 
-const DATA_FILE = path.join(__dirname, 'photos.json');
-const COLLECTIONS_FILE = path.join(__dirname, 'collections.json');
-const CATEGORIES_FILE = path.join(__dirname, 'categories.json');
-const SETTINGS_FILE = path.join(__dirname, 'settings.json');
+// Pasta dos dados JSON. No Coolify é o volume /data; em desenvolvimento fica a pasta do backend.
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+const SEED_DIR = path.join(__dirname, 'seed');
+const DATA_FILE = path.join(DATA_DIR, 'photos.json');
+const COLLECTIONS_FILE = path.join(DATA_DIR, 'collections.json');
+const CATEGORIES_FILE = path.join(DATA_DIR, 'categories.json');
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
 // Middleware
 app.use(cors());
@@ -28,6 +31,21 @@ app.use(express.static('public'));
 // INICIALIZAÇÃO DE FICHEIROS
 // ========================================
 async function initDataFiles() {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  await fs.mkdir(PHOTOS_DIR, { recursive: true }).catch(() => {});
+  // Volume vazio: copia os JSON do repositório antes de criar ficheiros novos
+  for (const name of ['photos.json', 'collections.json', 'categories.json', 'settings.json']) {
+    const target = path.join(DATA_DIR, name);
+    try {
+      await fs.access(target);
+    } catch {
+      try {
+        await fs.copyFile(path.join(SEED_DIR, name), target);
+        console.log(`📁 ${name} copiado dos dados iniciais`);
+      } catch {}
+    }
+  }
+
   try {
     await fs.access(DATA_FILE);
   } catch {

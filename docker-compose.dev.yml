@@ -1,0 +1,32 @@
+# Desenvolvimento local (o compose antigo): docker compose -f docker-compose.dev.yml up
+services:
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - ../dados_privados/fotos_gdrive:/app/public/photos
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["npx", "nodemon", "--ignore", "*.json", "server.js"]
+    ports:
+      - "3000:3000"
+    env_file:
+      - ../dados_privados/.env
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - ../dados_privados:/dados_privados

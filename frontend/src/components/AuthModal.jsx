@@ -12,9 +12,8 @@ export default function AuthModal({ onLogin, onClose }) {
     setLoading(true)
 
     try {
-      // Faz o pedido ao teu backend a correr no porto 3000 do Docker
-      const backendUrl = `${window.location.hostname}:3000/api/login`;
-      const response = await fetch(`http://${backendUrl}`, {
+      // Pedido relativo: passa pelo proxy (Vite em dev, nginx em produção)
+      const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
