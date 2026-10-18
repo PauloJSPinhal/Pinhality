@@ -29,6 +29,7 @@ export default function App() {
   const [showManageCollections, setShowManageCollections] = useState(false)
   const [showManageCategories, setShowManageCategories] = useState(false)
   const [showManageMenu, setShowManageMenu] = useState(false)
+  const [filterDate, setFilterDate] = useState('all')
 
   useEffect(() => {
     loadInitialData()
@@ -348,7 +349,9 @@ const handleOpenFullscreen = (photo) => {
     
     const matchesCollection = filterCollection === 'all' || photo.collection === filterCollection
     
-    return matchesSearch && matchesCategory && matchesCollection
+    const matchesDate = filterDate === 'all' || (photo.date && photo.date.startsWith(filterDate));
+    
+    return matchesSearch && matchesCategory && matchesCollection && matchesDate
   })
 
   // Calcular número de fotos por categoria
@@ -366,6 +369,21 @@ const handleOpenFullscreen = (photo) => {
   }, {});
 
   const activeCollectionName = collections.find(c => c.id === activeCollectionId)?.name || null
+
+  const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+  const availableDates = photos.reduce((acc, photo) => {
+    if (photo.date && photo.date.length >= 4) {
+      const year = photo.date.substring(0, 4);
+      if (!acc[year]) acc[year] = new Set();
+      if (photo.date.length >= 7) {
+        acc[year].add(photo.date.substring(5, 7));
+      }
+    }
+    return acc;
+  }, {});
+
+  const sortedYears = Object.keys(availableDates).sort((a, b) => b.localeCompare(a));
 
   if (loading) {
     return (
@@ -537,6 +555,29 @@ const handleOpenFullscreen = (photo) => {
               </option>
             ))}
           </select>
+
+          {/* Seletor de Datas (Ano/Mês) */}
+          <select
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            className="px-3 py-2 sm:px-4 sm:py-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all" className="text-sm">📅 Todas as Datas ({photos.length})</option>
+            {sortedYears.map(year => (
+              <option key={year} value={year} className="text-sm">
+                📅 {year}
+              </option>
+            ))}
+            {sortedYears.map(year => (
+              [...availableDates[year]].sort((a,b) => b.localeCompare(a)).map(month => (
+                <option key={`${year}-${month}`} value={`${year}-${month}`} className="text-sm">
+                  📅 {monthNames[parseInt(month) - 1]} {year}
+                </option>
+              ))
+            ))}
+          </select>
+
+
         </div>
       </div>
 
