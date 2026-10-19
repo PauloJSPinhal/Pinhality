@@ -94,18 +94,18 @@ export default function ManageCategoriesModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-2xl font-bold text-white">Gerir Categorias</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-2 sm:p-4 overscroll-contain">
+      <div className="bg-gray-800 rounded-lg max-w-2xl w-full max-h-vd-90 sm:max-h-vd-80 short:max-h-vd-90 overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between gap-3 px-4 py-4 sm:p-6 short:py-3 border-b border-gray-700">
+          <h2 className="text-xl sm:text-2xl font-bold text-white min-w-0">Gerir Categorias</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-white shrink-0 flex items-center justify-center" title="Fechar">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
         
-        <div className="p-6 overflow-y-auto flex-1">
+        <div className="p-4 sm:p-6 overflow-y-auto overscroll-contain flex-1 min-h-0">
           <div className="mb-6">
             <h3 className="text-white font-semibold mb-3">Categorias Atuais</h3>
             {categories.length === 0 ? (
@@ -121,7 +121,7 @@ export default function ManageCategoriesModal({
                   return (
                     <div 
                       key={category} 
-                      className="bg-gray-900 rounded-lg p-3 flex items-center justify-between"
+                      className="bg-gray-900 rounded-lg p-3 flex items-center justify-between gap-2 min-w-0"
                     >
                       {editingCategory === category ? (
                         <>
@@ -129,14 +129,14 @@ export default function ManageCategoriesModal({
                             type="text"
                             value={editValue}
                             onChange={(e) => setEditValue(e.target.value)}
-                            className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="flex-1 min-w-0 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                             autoFocus
                             onKeyPress={(e) => {
                               if (e.key === 'Enter') handleEdit(category);
                               if (e.key === 'Escape') cancelEdit();
                             }}
                           />
-                          <div className="flex items-center gap-2 ml-3">
+                          <div className="flex items-center gap-2 sm:ml-1 shrink-0">
                             <button
                               onClick={() => handleEdit(category)}
                               className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors"
@@ -155,13 +155,13 @@ export default function ManageCategoriesModal({
                         </>
                       ) : (
                         <>
-                          <div className="flex-1 flex items-center justify-between">
-                            <span className="text-white">🏷️ {category}</span>
-                            <span className="text-gray-400 text-sm ml-3">
+                          <div className="flex-1 min-w-0 flex flex-wrap items-center justify-between gap-x-3">
+                            <span className="text-white min-w-0 break-words">🏷️ {category}</span>
+                            <span className="text-gray-400 text-sm whitespace-nowrap">
                               {photoCount} {photoCount === 1 ? 'foto' : 'fotos'}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2 ml-4">
+                          <div className="flex items-center gap-2 sm:ml-2 shrink-0">
                             <button
                               onClick={() => startEdit(category)}
                               className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
@@ -194,14 +194,14 @@ export default function ManageCategoriesModal({
                 value={newCategory}
                 onChange={(e) => setNewCategory(e.target.value)}
                 placeholder="ex: Paisagem"
-                className="flex-1 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex-1 min-w-0 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 onKeyPress={(e) => {
                   if (e.key === 'Enter') handleAdd();
                 }}
               />
               <button
                 onClick={handleAdd}
-                className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center space-x-2"
+                className="px-4 sm:px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2 shrink-0"
                 title="Adicionar Categoria"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -213,7 +213,7 @@ export default function ManageCategoriesModal({
           </div>
         </div>
         
-        <div className="p-6 border-t border-gray-700 flex justify-end">
+        <div className="px-4 py-4 sm:p-6 short:py-3 border-t border-gray-700 flex justify-end">
           <button
             onClick={onClose}
             className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex items-center space-x-2"

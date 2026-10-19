@@ -120,18 +120,18 @@ export default function RcloneSettingsModal({ isOpen, onClose, reason }) {
   const lastTest = status?.lastTest;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-2xl font-bold text-white">☁️ Ligação ao Google Drive</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white" title="Fechar">
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-2 sm:p-4 overscroll-contain">
+      <div className="bg-gray-800 rounded-lg max-w-2xl w-full max-h-vd-90 overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between gap-3 px-4 py-4 sm:p-6 short:py-3 border-b border-gray-700">
+          <h2 className="text-xl sm:text-2xl font-bold text-white min-w-0">☁️ Ligação ao Google Drive</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-white shrink-0 flex items-center justify-center" title="Fechar">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto space-y-5">
+        <div className="p-4 sm:p-6 overflow-y-auto overscroll-contain flex-1 min-h-0 space-y-5">
           {reason && (
             <div className="bg-yellow-900 bg-opacity-50 border border-yellow-700 text-yellow-200 rounded-lg p-3 text-sm">
               ⚠️ {reason}
@@ -139,7 +139,7 @@ export default function RcloneSettingsModal({ isOpen, onClose, reason }) {
           )}
 
           {/* Estado */}
-          <div className="bg-gray-900 rounded-lg p-4 text-sm space-y-1">
+          <div className="bg-gray-900 rounded-lg p-4 text-sm space-y-1 break-words">
             {loading ? (
               <p className="text-gray-400">A carregar estado...</p>
             ) : status ? (
@@ -153,7 +153,7 @@ export default function RcloneSettingsModal({ isOpen, onClose, reason }) {
                 {status.configured && (
                   <>
                     <p className="text-gray-400">Origem: {SOURCE_LABELS[status.source] || status.source}</p>
-                    <p className="text-gray-400">Pasta remota: <code className="text-gray-300">{status.remote}</code></p>
+                    <p className="text-gray-400">Pasta remota: <code className="text-gray-300 break-all">{status.remote}</code></p>
                   </>
                 )}
                 {stored.updatedAt && (
@@ -177,7 +177,7 @@ export default function RcloneSettingsModal({ isOpen, onClose, reason }) {
                 value={form.token}
                 onChange={set('token')}
                 rows={3}
-                className={`${inputClass} font-mono text-xs`}
+                className={`${inputClass} font-mono text-base sm:text-xs`}
                 placeholder={stored.hasToken ? 'Deixe vazio para manter o token atual' : '{"access_token":"...","token_type":"Bearer","refresh_token":"...","expiry":"..."}'}
                 autoComplete="off"
                 spellCheck={false}
@@ -212,9 +212,10 @@ export default function RcloneSettingsModal({ isOpen, onClose, reason }) {
               />
             </div>
 
-            <details className="bg-gray-900 rounded-lg p-4">
-              <summary className="text-sm text-gray-300 cursor-pointer">Opções avançadas</summary>
-              <div className="space-y-4 mt-4">
+            <details className="bg-gray-900 rounded-lg">
+              {/* O padding está no summary para toda a faixa ser clicável (mais fácil com o dedo) */}
+              <summary className="text-sm text-gray-300 cursor-pointer p-4">Opções avançadas</summary>
+              <div className="space-y-4 px-4 pb-4">
                 <div>
                   <label className="block text-sm text-gray-300 mb-1">
                     Client ID (opcional) {stored.clientId && <span className="text-green-400">• {stored.clientId}</span>}
@@ -247,10 +248,10 @@ export default function RcloneSettingsModal({ isOpen, onClose, reason }) {
             {error && <p className="text-red-400 text-sm">{error}</p>}
 
             {testResult && (
-              <div className={`rounded-lg p-3 text-sm ${testResult.ok ? 'bg-green-900 bg-opacity-50 text-green-200' : 'bg-red-900 bg-opacity-50 text-red-200'}`}>
+              <div className={`rounded-lg p-3 text-sm break-words ${testResult.ok ? 'bg-green-900 bg-opacity-50 text-green-200' : 'bg-red-900 bg-opacity-50 text-red-200'}`}>
                 <p>{testResult.ok ? '✅' : '❌'} {testResult.message}</p>
                 {testResult.ok && testResult.folders.length > 0 && (
-                  <p className="mt-1 text-xs">📁 {testResult.folders.join(', ')}</p>
+                  <p className="mt-1 text-xs break-words">📁 {testResult.folders.join(', ')}</p>
                 )}
               </div>
             )}

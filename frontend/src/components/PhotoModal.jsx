@@ -32,42 +32,46 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
     else if (dx < -50 && next) onNavigate(next)
   }
 
-  const arrowClass = "absolute top-1/2 -translate-y-1/2 p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white z-10 transition-all hover:scale-110"
+  const arrowClass = "absolute top-1/2 -translate-y-1/2 p-2 sm:p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white z-10 transition-all hover:scale-110 flex items-center justify-center"
 
   return (
     <div 
-      className="fixed inset-0 bg-black bg-opacity-95 z-50 flex items-start justify-center p-2 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 bg-black bg-opacity-95 z-50 flex items-start justify-center page-x py-2 sm:py-4 overflow-y-auto overscroll-contain"
       onClick={onClose}
     >
       <div 
-        className="w-full max-w-7xl mx-auto my-4"
+        className="w-full max-w-7xl 3xl:max-w-[1800px] mx-auto my-2 sm:my-4 short:my-0"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 min-h-0">
+        {/* Paulo: imagem por cima da informação no telemóvel; lado a lado a partir de 1024px
+            e também no telemóvel deitado (short:), onde não há altura para as duas coisas empilhadas */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 short:grid-cols-3 gap-4 sm:gap-6 short:gap-3 min-h-0">
           
           {/* Imagem */}
-          <div className="lg:col-span-2 flex items-center justify-center min-h-0 relative" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+          <div className="lg:col-span-2 short:col-span-2 flex items-center justify-center min-h-0 min-w-0 relative" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
             {prev && onNavigate && (
               <button type="button" onClick={() => onNavigate(prev)} className={`${arrowClass} left-2`} title="Anterior">
-                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
               </button>
             )}
             {next && onNavigate && (
               <button type="button" onClick={() => onNavigate(next)} className={`${arrowClass} right-2`} title="Próxima">
-                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
               </button>
             )}
             <img
               src={webSrc(photo)}
               alt={photo.title}
-              className="max-h-[60vh] sm:max-h-[70vh] w-auto object-contain cursor-zoom-in"
+              className="max-h-vd-60 sm:max-h-vd-70 short:max-h-vd-90 w-auto max-w-full h-auto object-contain cursor-zoom-in"
               onClick={() => onOpenFullscreen(photo)}
               title="Clique para ver em fullscreen"
             />
           </div>
 
           {/* Painel de Informações — SCROLL FUNCIONAL EM MOBILE */}
-          <div className="bg-gray-800 rounded-lg p-4 sm:p-6 flex flex-col min-h-0 max-h-[70vh] sm:max-h-[80vh] overflow-y-auto">
+          {/* Paulo: no telemóvel o painel cresce e a página faz scroll (antes havia um scroll dentro de outro);
+              só tem altura máxima quando está ao lado da imagem */}
+          <div className="bg-gray-800 rounded-lg p-4 sm:p-6 short:p-3 flex flex-col min-h-0 min-w-0 lg:max-h-vd-80 lg:overflow-y-auto short:max-h-vd-90 short:overflow-y-auto">
             
             {/* Botão Voltar — AGORA NO TOPO (entre a foto e o texto) */}
             <button
@@ -81,15 +85,15 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
               <span className="ml-2">Voltar à Galeria</span>
             </button>
 
-            <h2 className="text-xl font-bold text-white mb-3">{photo.title}</h2>
+            <h2 className="text-xl font-bold text-white mb-3 break-words">{photo.title}</h2>
 
             {/* Paulo: o detalhe mostra a versão web (~1600px); o original completo vem do Drive só se o pedirem */}
-            <div className="flex gap-2 mb-4">
+            <div className="flex flex-wrap gap-2 mb-4">
               {/* Paulo: "Ver original" abre o teu ecrã completo, centrado como antes, em vez de uma aba nova */}
               <button
                 type="button"
                 onClick={() => onOpenFullscreen(photo)}
-                className="flex-1 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center"
+                className="flex-auto px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center"
                 title="Ver o original em resolução completa"
               >
                 🔍 Ver original{photo.width && photo.height ? ` (${photo.width}×${photo.height})` : ''}
@@ -97,7 +101,7 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
               <a
                 href={originalSrc(photo, true)}
                 download
-                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center"
+                className="flex-auto px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center inline-flex items-center justify-center"
                 title="Descarregar o original"
               >
                 ⬇️ Descarregar{photo.originalSize ? ` (${(photo.originalSize / 1024 / 1024).toFixed(1)} MB)` : ''}
@@ -105,23 +109,23 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
             </div>
 
             {photo.description && (
-              <p className="text-gray-300 mb-4">{photo.description}</p>
+              <p className="text-gray-300 mb-4 break-words">{photo.description}</p>
             )}
 
             {(photo.location || photo.date) && (
               <div className="space-y-2 mb-4 pb-4 border-b border-gray-700">
                 {photo.location && (
                   <div className="flex items-center text-gray-300">
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                    <span>{photo.location}</span>
+                    <span className="min-w-0 break-words">{photo.location}</span>
                   </div>
                 )}
                 {photo.date && (
                   <div className="flex items-center text-gray-300">
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                     <span>{new Date(photo.date).toLocaleDateString('pt-PT')} {photo.time && `às ${photo.time}`}</span>
@@ -134,16 +138,16 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
             {(photo.aperture || photo.iso || photo.shutterSpeed || photo.focalLength) && (
               <div className="mb-4 pb-4 border-b border-gray-700">
                 <h3 className="text-white font-semibold mb-3 flex items-center">
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                   </svg>
                   Dados Técnicos
                 </h3>
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  {photo.aperture && <div><span className="text-gray-400">Abertura:</span> <p className="text-white">f/{photo.aperture}</p></div>}
-                  {photo.iso && <div><span className="text-gray-400">ISO:</span> <p className="text-white">{photo.iso}</p></div>}
-                  {photo.shutterSpeed && <div><span className="text-gray-400">Velocidade:</span> <p className="text-white">{photo.shutterSpeed}</p></div>}
-                  {photo.focalLength && <div><span className="text-gray-400">Focal:</span> <p className="text-white">{photo.focalLength}mm</p></div>}
+                  {photo.aperture && <div><span className="text-gray-400">Abertura:</span> <p className="text-white break-words">f/{photo.aperture}</p></div>}
+                  {photo.iso && <div><span className="text-gray-400">ISO:</span> <p className="text-white break-words">{photo.iso}</p></div>}
+                  {photo.shutterSpeed && <div><span className="text-gray-400">Velocidade:</span> <p className="text-white break-words">{photo.shutterSpeed}</p></div>}
+                  {photo.focalLength && <div><span className="text-gray-400">Focal:</span> <p className="text-white break-words">{photo.focalLength}mm</p></div>}
                 </div>
               </div>
             )}
@@ -153,11 +157,11 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
               <div className="mb-4 pb-4 border-b border-gray-700">
                 <h3 className="text-white font-semibold mb-3">Configurações Avançadas</h3>
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  {photo.exposureMode && <div><span className="text-gray-400">Modo de Exposição:</span> <p className="text-white">{photo.exposureMode}</p></div>}
-                  {photo.meteringMode && <div><span className="text-gray-400">Modo de Medição:</span> <p className="text-white">{photo.meteringMode}</p></div>}
-                  {photo.exposureCompensation && <div><span className="text-gray-400">Compensação EV:</span> <p className="text-white">{photo.exposureCompensation}</p></div>}
-                  {photo.whiteBalance && <div><span className="text-gray-400">Balanço de Brancos:</span> <p className="text-white">{photo.whiteBalance}</p></div>}
-                  {photo.focusMode && <div><span className="text-gray-400">Modo de Focagem:</span> <p className="text-white">{photo.focusMode}</p></div>}
+                  {photo.exposureMode && <div><span className="text-gray-400">Modo de Exposição:</span> <p className="text-white break-words">{photo.exposureMode}</p></div>}
+                  {photo.meteringMode && <div><span className="text-gray-400">Modo de Medição:</span> <p className="text-white break-words">{photo.meteringMode}</p></div>}
+                  {photo.exposureCompensation && <div><span className="text-gray-400">Compensação EV:</span> <p className="text-white break-words">{photo.exposureCompensation}</p></div>}
+                  {photo.whiteBalance && <div><span className="text-gray-400">Balanço de Brancos:</span> <p className="text-white break-words">{photo.whiteBalance}</p></div>}
+                  {photo.focusMode && <div><span className="text-gray-400">Modo de Focagem:</span> <p className="text-white break-words">{photo.focusMode}</p></div>}
                 </div>
               </div>
             )}
@@ -177,7 +181,7 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
             {(photo.camera || photo.lens) && (
               <div className="mb-4 pb-4 border-b border-gray-700">
                 <h3 className="text-white font-semibold mb-3 flex items-center">
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                   </svg>
                   Equipamento

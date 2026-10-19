@@ -198,20 +198,22 @@ export default function AddEditModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-gray-800 rounded-lg max-w-2xl w-full my-8">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-2xl font-bold text-white">
+    // Paulo: o modal nunca passa da altura visível (max-h-vd-90); só o formulário faz scroll e os botões
+    // Cancelar/Guardar ficam sempre à vista, mesmo com o teclado do telemóvel aberto
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-2 sm:p-4 overscroll-contain">
+      <div className="bg-gray-800 rounded-lg max-w-2xl w-full max-h-vd-90 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-4 py-4 sm:p-6 short:py-3 border-b border-gray-700">
+          <h2 className="text-xl sm:text-2xl font-bold text-white min-w-0 break-words">
             {isEditing ? 'Editar Foto' : 'Adicionar Nova Foto'}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
+          <button onClick={onClose} className="text-gray-400 hover:text-white shrink-0 flex items-center justify-center" title="Fechar">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
         
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 flex-1 min-h-0 overflow-y-auto overscroll-contain">
           <div>
             <label className="block text-gray-300 mb-2">Título *</label>
             <input
@@ -243,9 +245,9 @@ export default function AddEditModal({
             
             {/* Feedback visual da coleção */}
             {formData.collection && (
-              <div className="mt-2 flex items-center space-x-2 text-sm">
+              <div className="mt-2 flex items-start space-x-2 text-sm min-w-0">
                 <span className="text-green-400">✓</span>
-                <span className="text-gray-300">
+                <span className="text-gray-300 min-w-0 break-all">
                   Caminho: <strong className="text-white font-mono">
                     photos/{formData.collection}/{formData.imageUrl || '...'}
                   </strong>
@@ -267,7 +269,7 @@ export default function AddEditModal({
             </button>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-gray-300 mb-2">Coleção *</label>
               <select
@@ -303,7 +305,7 @@ export default function AddEditModal({
                       }}
                       className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 rounded focus:ring-blue-500"
                     />
-                    <span className="text-white">{cat}</span>
+                    <span className="text-white min-w-0 break-words">{cat}</span>
                   </label>
                 ))}
               </div>
@@ -324,7 +326,7 @@ export default function AddEditModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 xs:grid-cols-2 gap-4">
             <div>
               <label className="block text-gray-300 mb-2">Data</label>
               <input
@@ -351,7 +353,7 @@ export default function AddEditModal({
           {/* DADOS TÉCNICOS BÁSICOS */}
           <div className="border-t border-gray-700 pt-4 mt-4">
             <h3 className="text-white font-semibold mb-3">Dados Técnicos Básicos</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 xs:grid-cols-2 gap-4">
               <div>
                 <label className="block text-gray-300 mb-2">Abertura (f/)</label>
                 <input
@@ -398,7 +400,7 @@ export default function AddEditModal({
           {/* CONFIGURAÇÕES AVANÇADAS */}
           <div className="border-t border-gray-700 pt-4 mt-4">
             <h3 className="text-white font-semibold mb-3">Configurações Avançadas</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 xs:grid-cols-2 gap-4">
               <div>
                 <label className="block text-gray-300 mb-2">Modo de Exposição</label>
                 <input
@@ -475,7 +477,7 @@ export default function AddEditModal({
                       name="gpsLatitude"
                       value={formData.gpsLatitude}
                       readOnly
-                      className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed font-mono text-sm"
+                      className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed font-mono text-base sm:text-sm"
                     />
                   </div>
                 )}
@@ -487,7 +489,7 @@ export default function AddEditModal({
                       name="gpsLongitude"
                       value={formData.gpsLongitude}
                       readOnly
-                      className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed font-mono text-sm"
+                      className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed font-mono text-base sm:text-sm"
                     />
                   </div>
                 )}
@@ -498,7 +500,7 @@ export default function AddEditModal({
           {/* EQUIPAMENTO */}
           <div className="border-t border-gray-700 pt-4 mt-4">
             <h3 className="text-white font-semibold mb-3">Equipamento</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 xs:grid-cols-2 gap-4">
               <div>
                 <label className="block text-gray-300 mb-2">Câmara</label>
                 <input
@@ -534,7 +536,7 @@ export default function AddEditModal({
           </div>
         </form>
         
-        <div className="flex gap-3 p-6 border-t border-gray-700">
+        <div className="flex gap-3 px-4 py-4 sm:p-6 short:py-3 border-t border-gray-700">
           <button
             onClick={onClose}
             className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"

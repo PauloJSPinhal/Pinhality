@@ -18,7 +18,8 @@ export default function PhotoGrid({ photos, onPhotoClick }) {
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 mx-auto max-w-[1920px]">
+    // Paulo: mais colunas à medida que o ecrã cresce (1 num telemóvel pequeno … 6 em ecrãs de 1920px ou mais)
+    <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 gap-4 sm:gap-6 mx-auto">
       {photoList.map(photo => {
         // Paulo: a grelha usa a miniatura WebP (~400px) em vez do original de vários MB
         const imageUrl = thumbSrc(photo)
@@ -35,16 +36,16 @@ export default function PhotoGrid({ photos, onPhotoClick }) {
                 alt={photo.title}
                 loading="lazy"
                 decoding="async"
-                className="w-full h-56 object-cover group-hover:scale-105 transition-transform duration-300"
+                className="w-full h-56 xs:h-auto xs:aspect-[4/3] object-cover group-hover:scale-105 transition-transform duration-300"
               />
               {/* Título SOBRE a imagem REMOVIDO */}
             </div>
-            <div className="p-4">
-              <h3 className="text-white font-semibold text-base mb-2 truncate">{photo.title}</h3>
+            <div className="p-3 sm:p-4">
+              <h3 className="text-white font-semibold text-base mb-2 truncate" title={photo.title}>{photo.title}</h3>
               {photo.categories && photo.categories.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {photo.categories.slice(0, 3).map(cat => (
-                    <span key={cat} className="px-2 py-1 bg-blue-600 text-white text-xs rounded-full whitespace-nowrap">
+                    <span key={cat} className="px-2 py-1 bg-blue-600 text-white text-xs rounded-full whitespace-nowrap max-w-full truncate">
                       {cat}
                     </span>
                   ))}

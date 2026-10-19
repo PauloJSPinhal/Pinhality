@@ -27,13 +27,15 @@ body {
   padding: 0;
   min-width: 320px;
   min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
 }
 
 /* Modo fallback para fullscreen em mobile */
 body.fullscreen-fallback {
   height: 100vh;
-  width: 100vw;
+  height: 100dvh;
+  width: 100%;
   overflow: hidden;
   position: fixed;
   top: 0;
@@ -84,3 +86,59 @@ button:focus-visible {
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Paulo: margens laterais das páginas. Iguais ao px-4 / sm:px-6 / lg:px-8 de antes, mas nunca menores do que
+   a zona do "notch" (env(safe-area-inset-*)) quando o telemóvel está deitado. Precisa de viewport-fit=cover. */
+.page-x {
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+}
+@media (min-width: 640px) {
+  .page-x {
+    padding-left: max(1.5rem, env(safe-area-inset-left));
+    padding-right: max(1.5rem, env(safe-area-inset-right));
+  }
+}
+@media (min-width: 1024px) {
+  .page-x {
+    padding-left: max(2rem, env(safe-area-inset-left));
+    padding-right: max(2rem, env(safe-area-inset-right));
+  }
+}
+
+/* Posições junto às margens do ecrã, a contar com o notch e a barra inferior do iPhone.
+   safe-*: cantos (1rem no telemóvel, 1.5rem a partir de 640px, como o top-6 de antes); edge-*: setas laterais (1rem). */
+.safe-top { top: max(1rem, env(safe-area-inset-top)); }
+.safe-bottom { bottom: max(1rem, env(safe-area-inset-bottom)); }
+.safe-left { left: max(1rem, env(safe-area-inset-left)); }
+.safe-right { right: max(1rem, env(safe-area-inset-right)); }
+@media (min-width: 640px) {
+  .safe-top { top: max(1.5rem, env(safe-area-inset-top)); }
+  .safe-bottom { bottom: max(1.5rem, env(safe-area-inset-bottom)); }
+  .safe-left { left: max(1.5rem, env(safe-area-inset-left)); }
+  .safe-right { right: max(1.5rem, env(safe-area-inset-right)); }
+}
+.edge-left { left: max(1rem, env(safe-area-inset-left)); }
+.edge-right { right: max(1rem, env(safe-area-inset-right)); }
+.edge-bottom { bottom: max(1rem, env(safe-area-inset-bottom)); }
+.safe-pb { padding-bottom: max(1.5rem, env(safe-area-inset-bottom)); }
+
+/* Paulo: em ecrãs táteis (dedo em vez de rato) todos os botões e campos têm pelo menos 44×44 px,
+   o tamanho mínimo recomendado para se acertar com o dedo. No computador o aspeto não muda. */
+@media (pointer: coarse) {
+  button,
+  select,
+  input:not([type='checkbox']):not([type='radio']),
+  a[download],
+  .tap {
+    min-height: 44px;
+  }
+  button,
+  .tap {
+    min-width: 44px;
+  }
+  .tap {
+    display: inline-flex;
+    align-items: center;
+  }
+}

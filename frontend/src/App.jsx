@@ -505,41 +505,50 @@ const handleOpenFullscreen = (photo) => {
     setFilterMonth('all')
   }
 
+  // Mesmo estilo para todos os filtros. Paulo: 16px de letra (text-base) evita que o iPhone faça zoom ao tocar.
+  const selectClass = "flex-1 basis-40 min-w-0 lg:flex-none lg:basis-auto lg:max-w-xs px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-base truncate focus:outline-none focus:ring-2 focus:ring-blue-500"
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="min-h-screen min-h-vd-100 bg-gray-900 flex items-center justify-center">
         <div className="text-white text-xl">A carregar...</div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+    <div className="min-h-screen min-h-vd-100 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+      {/* Paulo: toque fora do menu "Gerir" fecha-o (no telemóvel não há "sair com o rato") */}
+      {showManageMenu && <div className="fixed inset-0 z-30" onClick={() => setShowManageMenu(false)} />}
+
       {/* Header */}
       <header className="bg-black bg-opacity-50 backdrop-blur-md border-b border-gray-700 sticky top-0 z-40">
-        <div className="max-w-[1920px] mx-auto px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="max-w-[2200px] mx-auto page-x py-3 sm:py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+              <svg className="w-7 h-7 sm:w-8 sm:h-8 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-              <div>
-                <h1 className="text-2xl font-bold text-white">Pinhality</h1>
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-2xl font-bold text-white">Pinhality</h1>
                 {!authenticated && activeCollectionName && (
-                  <p className="text-xs text-gray-400">📁 {activeCollectionName}</p>
+                  <p className="text-xs text-gray-400 truncate">📁 {activeCollectionName}</p>
                 )}
               </div>
             </div>
             
-            <div className="flex items-center space-x-3">
+            {/* O menu "Gerir" fica alinhado à direita deste grupo, para nunca sair do ecrã em telemóveis */}
+            <div className="relative flex items-center space-x-2 sm:space-x-3 shrink-0">
               {authenticated ? (
                 <>
                   {/* Botão Gerir */}
-                  <div className="relative">
+                  <div>
                     <button
                       onClick={() => setShowManageMenu(!showManageMenu)}
-                      className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center space-x-2"
+                      className="bg-gray-700 hover:bg-gray-600 text-white px-3 sm:px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
+                      title="Gerir"
+                      aria-expanded={showManageMenu}
                     >
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -549,7 +558,7 @@ const handleOpenFullscreen = (photo) => {
                     </button>
                     
                     {showManageMenu && (
-                      <div className="absolute right-0 mt-2 w-56 bg-gray-800 rounded-lg shadow-xl border border-gray-700 py-2 z-50">
+                      <div className="absolute right-0 top-full mt-2 w-56 max-w-[calc(100vw-2rem)] bg-gray-800 rounded-lg shadow-xl border border-gray-700 py-2 z-50">
                         <button
                           onClick={() => {
                             setShowManageCollections(true)
@@ -603,7 +612,7 @@ const handleOpenFullscreen = (photo) => {
 
                   <button
                     onClick={() => setShowAddModal(true)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-all transform hover:scale-105"
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 sm:px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition-all transform hover:scale-105"
                     title="Adicionar Fotos"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -614,7 +623,7 @@ const handleOpenFullscreen = (photo) => {
                   
                   <button
                     onClick={handleLogout}
-                    className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center space-x-2"
+                    className="bg-gray-700 hover:bg-gray-600 text-white px-3 sm:px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
                     title="Terminar Sessão"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -626,7 +635,7 @@ const handleOpenFullscreen = (photo) => {
               ) : (
                 <button
                   onClick={() => setShowAuthModal(true)}
-                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center space-x-2"
+                  className="bg-green-600 hover:bg-green-700 text-white px-3 sm:px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
                   title="Iniciar Sessão"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -641,15 +650,18 @@ const handleOpenFullscreen = (photo) => {
       </header>
 
       {/* Search and Filter */}
-      <div className="max-w-[1920px] mx-auto px-4 py-6 sm:px-6 lg:px-8">
-        <div className="flex flex-col sm:flex-row gap-4">
+      {/* Paulo: a pesquisa ocupa a linha toda até 1280px; os filtros por baixo partem-se em várias linhas
+          conforme a largura (2 por linha num telemóvel, todos numa linha em ecrãs grandes) */}
+      <div className="max-w-[2200px] mx-auto page-x py-4 sm:py-6">
+        <div className="flex flex-col xl:flex-row gap-3 sm:gap-4">
           {/* Campo de Pesquisa */}
-          <div className="flex-1 relative">
+          <div className="xl:flex-1 relative min-w-0">
             <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <input
-              type="text"
+              type="search"
+              enterKeyHint="search"
               placeholder="Pesquisar fotos..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -657,11 +669,12 @@ const handleOpenFullscreen = (photo) => {
             />
           </div>
 
+          <div className="flex flex-wrap gap-3 sm:gap-4">
           {/* Seletor de Coleções */}
           <select
             value={filterCollection}
             onChange={(e) => handleChangeCollection(e.target.value)}
-            className="px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={selectClass}
           >
             <option value="all" className="text-sm">🌍 Todas as Coleções ({photos.length})</option>
             {collections.map(col => (
@@ -675,7 +688,7 @@ const handleOpenFullscreen = (photo) => {
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
-            className="px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={selectClass}
           >
             <option value="todas" className="text-sm">🏷️ Todas as Categorias ({photos.length})</option>
             {categories.map(cat => (
@@ -692,7 +705,7 @@ const handleOpenFullscreen = (photo) => {
               setFilterDate(e.target.value)
               setFilterMonth('all')
             }}
-            className="px-3 py-2 sm:px-4 sm:py-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={selectClass}
           >
             <option value="all" className="text-sm">📅 Todas as Datas</option>
             {sortedYears.map(year => (
@@ -705,7 +718,7 @@ const handleOpenFullscreen = (photo) => {
             <select
               value={filterMonth}
               onChange={(e) => setFilterMonth(e.target.value)}
-              className="px-3 py-2 sm:px-4 sm:py-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={selectClass}
             >
               <option value="all" className="text-sm">🗓️ Todos os Meses</option>
               {[...availableDates[filterDate]].sort((a,b) => a.localeCompare(b)).map(month => (
@@ -715,13 +728,12 @@ const handleOpenFullscreen = (photo) => {
               ))}
             </select>
           )}
-
-
+          </div>
         </div>
       </div>
 
       {/* Photo Grid */}
-      <div className="max-w-[1920px] mx-auto px-4 pb-12 sm:px-6 lg:px-8">
+      <div className="max-w-[2200px] mx-auto page-x pb-12">
         <PhotoGrid 
           photos={filteredPhotos} 
           onPhotoClick={handlePhotoClick}
@@ -730,8 +742,8 @@ const handleOpenFullscreen = (photo) => {
 
       {/* Footer */}
 
-      <footer className="mt-12 pb-6 px-4 sm:px-6 lg:px-8 text-center text-gray-400 text-sm">
-        <div className="max-w-[1920px] mx-auto flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-4">
+      <footer className="mt-12 safe-pb page-x text-center text-gray-400 text-sm">
+        <div className="max-w-[2200px] mx-auto flex flex-col sm:flex-row flex-wrap items-center justify-center gap-1 sm:gap-x-4">
           
           <div>© {new Date().getFullYear()} Paulo Pinhal.</div>
           
@@ -740,7 +752,7 @@ const handleOpenFullscreen = (photo) => {
           <div>
             <a 
               href="mailto:paulojspinhal@gmail.com" 
-              className="hover:text-white transition-colors underline-offset-2 hover:underline"
+              className="tap hover:text-white transition-colors underline-offset-2 hover:underline break-all"
               title="Enviar email"
             >
               sys.pjsp@gmail.com
@@ -749,7 +761,7 @@ const handleOpenFullscreen = (photo) => {
           
           <button
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="text-gray-500 hover:text-white transition-colors p-1 ml-2"
+            className="text-gray-500 hover:text-white transition-colors p-1 sm:ml-2 flex items-center justify-center"
             title="Voltar ao topo"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -761,8 +773,8 @@ const handleOpenFullscreen = (photo) => {
 
       {/* Progresso da sincronização com o Google Drive */}
       {syncJob && syncJob.running && (
-        <div className="fixed bottom-4 right-4 z-50 bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-4 w-72 text-sm text-white">
-          <p className="font-semibold mb-1">☁️ A sincronizar ({syncJob.scope})</p>
+        <div className="fixed edge-bottom edge-right left-4 sm:left-auto z-50 bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-4 sm:w-72 text-sm text-white">
+          <p className="font-semibold mb-1 truncate">☁️ A sincronizar ({syncJob.scope})</p>
           <p className="text-gray-400 mb-2">{syncJob.phase}{syncJob.total ? `: ${syncJob.done}/${syncJob.total}` : ''}</p>
           <div className="w-full h-2 bg-gray-700 rounded">
             <div

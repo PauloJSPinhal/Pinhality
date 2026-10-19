@@ -108,23 +108,26 @@ export default function PhotoFullscreen({
       <img
         src={fullSrc}
         alt={photo.title}
-        className="max-h-screen max-w-screen object-contain"
+        // Paulo: "max-w-screen" não existe no Tailwind (a imagem podia sair do ecrã) e 100vh no telemóvel
+        // inclui a barra do browser; max-h-vd-100 usa a altura visível real (dvh)
+        className="max-h-screen max-h-vd-100 max-w-full w-auto h-auto object-contain select-none"
         onClick={(e) => e.stopPropagation()}
         draggable={false}
       />
 
       {/* Botões de NAVEGAÇÃO (superior esquerdo) */}
       <div 
-        className="absolute top-6 left-6 flex gap-3 z-50"
+        // Paulo: safe-top/safe-left afastam os botões do notch e dos cantos arredondados do telemóvel
+        className="absolute safe-top safe-left flex gap-2 sm:gap-3 z-50"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Voltar ao modal de informações (02) */}
         <button
           onClick={onBackToModal}
-          className="p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white transition-all hover:scale-110"
+          className="p-2.5 sm:p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white transition-all hover:scale-110 flex items-center justify-center"
           title="Voltar às informações"
         >
-          <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
@@ -132,10 +135,10 @@ export default function PhotoFullscreen({
         {/* Fechar e voltar à grelha (01) */}
         <button
           onClick={onClose}
-          className="p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white transition-all hover:scale-110"
+          className="p-2.5 sm:p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white transition-all hover:scale-110 flex items-center justify-center"
           title="Fechar e voltar à galeria"
         >
-          <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
@@ -143,30 +146,30 @@ export default function PhotoFullscreen({
 
       {/* Botão de FAVORITO (superior direito) */}
       <div 
-        className="absolute top-6 right-6 flex gap-3 z-50"
+        className="absolute safe-top safe-right flex gap-2 sm:gap-3 z-50"
         onClick={(e) => e.stopPropagation()}
       >
         <a
           href={originalSrc(photo, true)}
           download
-          className="p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white transition-all hover:scale-110"
+          className="p-2.5 sm:p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white transition-all hover:scale-110 flex items-center justify-center"
           title="Descarregar o original"
         >
-          <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
           </svg>
         </a>
         <button
           onClick={handleFavoriteToggle}
-          className="p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white transition-all hover:scale-110"
+          className="p-2.5 sm:p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white transition-all hover:scale-110 flex items-center justify-center"
           title={photo.isFavorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
         >
           {photo.isFavorite ? (
-            <svg className="w-7 h-7 text-red-500 fill-current" viewBox="0 0 24 24">
+            <svg className="w-6 h-6 sm:w-7 sm:h-7 text-red-500 fill-current" viewBox="0 0 24 24">
               <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
             </svg>
           ) : (
-            <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-6 h-6 sm:w-7 sm:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
             </svg>
           )}
@@ -180,10 +183,10 @@ export default function PhotoFullscreen({
             e.stopPropagation();
             onNavigate(photos[currentIndex - 1]);
           }}
-          className="absolute left-4 top-1/2 -translate-y-1/2 p-4 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white z-50 transition-all hover:scale-110"
+          className="absolute edge-left top-1/2 -translate-y-1/2 p-2.5 sm:p-4 flex items-center justify-center rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white z-50 transition-all hover:scale-110"
           title="Anterior"
         >
-          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-7 h-7 sm:w-8 sm:h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
@@ -194,10 +197,10 @@ export default function PhotoFullscreen({
             e.stopPropagation();
             onNavigate(photos[currentIndex + 1]);
           }}
-          className="absolute right-4 top-1/2 -translate-y-1/2 p-4 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white z-50 transition-all hover:scale-110"
+          className="absolute edge-right top-1/2 -translate-y-1/2 p-2.5 sm:p-4 flex items-center justify-center rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white z-50 transition-all hover:scale-110"
           title="Próxima"
         >
-          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-7 h-7 sm:w-8 sm:h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
         </button>
@@ -206,7 +209,7 @@ export default function PhotoFullscreen({
       {/* Contador discreto (canto inferior direito) */}
       {photos.length > 1 && (
         <div 
-          className="absolute bottom-6 right-6 bg-black bg-opacity-50 text-white px-3 py-1.5 rounded-full text-xs font-medium z-50"
+          className="absolute safe-bottom safe-right bg-black bg-opacity-50 text-white px-3 py-1.5 rounded-full text-xs font-medium z-50"
           onClick={(e) => e.stopPropagation()}
         >
           {currentIndex + 1} / {photos.length}
