@@ -82,6 +82,17 @@ export default function PhotoFullscreen({
   const hasPrevious = currentIndex > 0;
   const hasNext = currentIndex < photos.length - 1;
 
+  // Paulo: no telemóvel, deslizar o dedo para a esquerda/direita muda de foto
+  const touchX = useRef(null);
+  const onTouchStart = (e) => { touchX.current = e.touches[0].clientX; };
+  const onTouchEnd = (e) => {
+    if (touchX.current == null) return;
+    const dx = e.changedTouches[0].clientX - touchX.current;
+    touchX.current = null;
+    if (dx > 50 && hasPrevious) onNavigate(photos[currentIndex - 1]);
+    else if (dx < -50 && hasNext) onNavigate(photos[currentIndex + 1]);
+  };
+
   const handleFavoriteToggle = () => {
     if (onToggleFavorite) onToggleFavorite(photo.id);
   };
@@ -91,6 +102,8 @@ export default function PhotoFullscreen({
       ref={containerRef}
       className="fixed inset-0 bg-black z-50 flex items-center justify-center touch-pan-x touch-pinch-zoom"
       onClick={onClose}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
     >
       <img
         src={fullSrc}

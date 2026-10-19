@@ -779,6 +779,8 @@ const handleOpenFullscreen = (photo) => {
       {selectedPhoto && !showFullscreen && (
         <PhotoModal 
           photo={selectedPhoto}
+          photos={filteredPhotos}
+          onNavigate={handleNavigatePhoto}
           onClose={() => setSelectedPhoto(null)}
           onEdit={() => openEditModal(selectedPhoto)}
           onDelete={() => handleDeletePhoto(selectedPhoto.id)}

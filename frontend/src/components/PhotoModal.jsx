@@ -1,9 +1,39 @@
 // ========================================
 // frontend/src/components/PhotoModal.jsx
 // ========================================
+import { useEffect, useRef } from 'react'
 import { webSrc, originalSrc } from '../api'
 
-export default function PhotoModal({ photo, onClose, onEdit, onDelete, onOpenFullscreen, authenticated }) {
+export default function PhotoModal({ photo, photos = [], onNavigate, onClose, onEdit, onDelete, onOpenFullscreen, authenticated }) {
+  // Paulo: também dá para andar para a esquerda e para a direita no detalhe da foto
+  // (setas no ecrã, teclas ← → e deslizar o dedo no telemóvel), tal como no ecrã completo.
+  const currentIndex = photos.findIndex(p => p.id === photo.id)
+  const prev = currentIndex > 0 ? photos[currentIndex - 1] : null
+  const next = currentIndex >= 0 && currentIndex < photos.length - 1 ? photos[currentIndex + 1] : null
+  const touchX = useRef(null)
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return
+      if (e.key === 'Escape') onClose()
+      else if (e.key === 'ArrowLeft' && prev && onNavigate) onNavigate(prev)
+      else if (e.key === 'ArrowRight' && next && onNavigate) onNavigate(next)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [prev, next, onNavigate, onClose])
+
+  const onTouchStart = (e) => { touchX.current = e.touches[0].clientX }
+  const onTouchEnd = (e) => {
+    if (touchX.current == null || !onNavigate) return
+    const dx = e.changedTouches[0].clientX - touchX.current
+    touchX.current = null
+    if (dx > 50 && prev) onNavigate(prev)
+    else if (dx < -50 && next) onNavigate(next)
+  }
+
+  const arrowClass = "absolute top-1/2 -translate-y-1/2 p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white z-10 transition-all hover:scale-110"
+
   return (
     <div 
       className="fixed inset-0 bg-black bg-opacity-95 z-50 flex items-start justify-center p-2 sm:p-4 overflow-y-auto"
@@ -16,7 +46,17 @@ export default function PhotoModal({ photo, onClose, onEdit, onDelete, onOpenFul
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 min-h-0">
           
           {/* Imagem */}
-          <div className="lg:col-span-2 flex items-center justify-center min-h-0">
+          <div className="lg:col-span-2 flex items-center justify-center min-h-0 relative" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+            {prev && onNavigate && (
+              <button type="button" onClick={() => onNavigate(prev)} className={`${arrowClass} left-2`} title="Anterior">
+                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+              </button>
+            )}
+            {next && onNavigate && (
+              <button type="button" onClick={() => onNavigate(next)} className={`${arrowClass} right-2`} title="Próxima">
+                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+              </button>
+            )}
             <img
               src={webSrc(photo)}
               alt={photo.title}
