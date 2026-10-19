@@ -1,7 +1,7 @@
 // ========================================
 // frontend/src/components/PhotoFullscreen.jsx
 // ========================================
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { webSrc, originalSrc } from '../api';
 
 export default function PhotoFullscreen({ 
@@ -12,6 +12,18 @@ export default function PhotoFullscreen({
   onNavigate, 
   onBackToModal 
 }) {
+  // Paulo: mostra logo a versão web (rápida) e troca pelo original do Drive assim que este chega,
+  // sempre centrado no ecrã completo como tinhas.
+  const [fullSrc, setFullSrc] = useState(webSrc(photo));
+  useEffect(() => {
+    setFullSrc(webSrc(photo));
+    const original = originalSrc(photo);
+    const img = new Image();
+    img.onload = () => setFullSrc(original);
+    img.src = original;
+    return () => { img.onload = null; };
+  }, [photo]);
+
   const containerRef = useRef(null);
 
   const enterFullscreen = async () => {
@@ -81,7 +93,7 @@ export default function PhotoFullscreen({
       onClick={onClose}
     >
       <img
-        src={webSrc(photo)}
+        src={fullSrc}
         alt={photo.title}
         className="max-h-screen max-w-screen object-contain"
         onClick={(e) => e.stopPropagation()}
@@ -122,11 +134,10 @@ export default function PhotoFullscreen({
         onClick={(e) => e.stopPropagation()}
       >
         <a
-          href={originalSrc(photo)}
-          target="_blank"
-          rel="noopener noreferrer"
+          href={originalSrc(photo, true)}
+          download
           className="p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white transition-all hover:scale-110"
-          title="Abrir o original em resolução completa"
+          title="Descarregar o original"
         >
           <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />

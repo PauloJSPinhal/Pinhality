@@ -45,15 +45,15 @@ export default function PhotoModal({ photo, onClose, onEdit, onDelete, onOpenFul
 
             {/* Paulo: o detalhe mostra a versão web (~1600px); o original completo vem do Drive só se o pedirem */}
             <div className="flex gap-2 mb-4">
-              <a
-                href={originalSrc(photo)}
-                target="_blank"
-                rel="noopener noreferrer"
+              {/* Paulo: "Ver original" abre o teu ecrã completo, centrado como antes, em vez de uma aba nova */}
+              <button
+                type="button"
+                onClick={() => onOpenFullscreen(photo)}
                 className="flex-1 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center"
-                title="Abrir o original em resolução completa"
+                title="Ver o original em resolução completa"
               >
                 🔍 Ver original{photo.width && photo.height ? ` (${photo.width}×${photo.height})` : ''}
-              </a>
+              </button>
               <a
                 href={originalSrc(photo, true)}
                 download
