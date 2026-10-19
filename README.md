@@ -133,3 +133,6 @@ Resumo (os detalhes e o porquê de cada alteração estão em [SEGURANCA.md](SEG
 - Cabeçalhos de segurança (CSP estrita, HSTS, `nosniff`, `frame-ancestors 'none'`, `Referrer-Policy`).
   O Tailwind é compilado com o site (sem CDN): o site não carrega nada de servidores externos.
 - `rclone` e `exiftool` correm sem shell e com nomes/caminhos validados.
+
+
+Made by LAISS
