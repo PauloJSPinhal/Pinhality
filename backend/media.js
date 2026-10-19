@@ -237,7 +237,10 @@ function createMedia(opts) {
   function urlsFor(imageUrl) {
     const p = parseImageUrl(imageUrl);
     const entry = p && manifest[keyOf(p.col, p.file)];
-    if (!entry) return { thumbUrl: imageUrl, webUrl: imageUrl, originalUrl: imageUrl };
+    // Paulo: mesmo sem derivados, o original passa pela rota /photos/original, que envia o cabeçalho
+    // de download (Content-Disposition: attachment). Antes apontava para o ficheiro estático e o
+    // botão Descarregar abria a imagem numa aba em vez de a transferir.
+    if (!entry) return { thumbUrl: imageUrl, webUrl: imageUrl, originalUrl: p ? `photos/original/${p.col}/${p.file}` : imageUrl };
     return {
       thumbUrl: `photos/thumb/${p.col}/${p.file}.webp`,
       webUrl: `photos/web/${p.col}/${p.file}.webp`,

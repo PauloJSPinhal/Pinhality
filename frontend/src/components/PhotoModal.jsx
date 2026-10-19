@@ -56,6 +56,7 @@ export default function PhotoModal({ photo, onClose, onEdit, onDelete, onOpenFul
               </a>
               <a
                 href={originalSrc(photo, true)}
+                download
                 className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center"
                 title="Descarregar o original"
               >
