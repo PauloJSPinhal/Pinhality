@@ -1218,12 +1218,25 @@ function describeRcloneError(result) {
   else if (result.error && result.error.killed) code = 'RCLONE_TIMEOUT';
   else if (/invalid_grant|unauthorized|unauthenticated|401|oauth2|token|invalid_client|didn't find section|couldn't find section|not found in config/i.test(text)) code = 'RCLONE_AUTH';
   else if (/directory not found|not found/i.test(text)) code = 'RCLONE_NOT_FOUND';
-  // Mensagem curta: só as linhas de erro, sem data/hora nem URLs longos
+  // Paulo: a Google devolve o erro em JSON espalhado por várias linhas. Antes mostrava-se só a última
+  // linha com "error" (p.ex. '"@type": "type.googleapis.com/google.rpc.ErrorInfo",'), que não diz nada.
+  // Agora tira-se o "message"/"reason" da Google e, se não houver, a linha "ERROR :" do rclone.
+  const google = [...text.matchAll(/"(message|reason)"\s*:\s*"([^"]+)"/g)].map(m => m[2]);
+  const reason = google.find(g => /^[A-Z_]+$/.test(g)) || '';
+  const gmsg = google.find(g => !/^[A-Z_]+$/.test(g)) || '';
+  if (/SCOPE_INSUFFICIENT|insufficient.*scope|insufficientPermissions/i.test(text)) code = 'RCLONE_SCOPE';
+  else if (/rateLimit|RATE_LIMIT|userRateLimitExceeded|quota/i.test(text)) code = 'RCLONE_RATE_LIMIT';
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
     .filter(l => !/^Command failed:/.test(l))
-    .filter(l => /ERROR|NOTICE|CRITICAL|Failed|error/i.test(l))
+    .filter(l => /ERROR\s*:|CRITICAL|Failed to/i.test(l))
     .map(l => l.replace(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}\s+/, '').replace(/"https?:\/\/[^"]*"/g, '<url>'));
-  const message = [...new Set(lines)].slice(-1).join(' | ').slice(0, 400) || 'Erro desconhecido do rclone';
+  const hints = {
+    RCLONE_SCOPE: 'O token não tem permissão para este tipo de acesso. Gere um token novo com o mesmo modo (só leitura ou total) escolhido aqui.',
+    RCLONE_RATE_LIMIT: 'A Google limitou temporariamente os pedidos. Tente de novo dentro de alguns minutos.',
+    RCLONE_AUTH: 'O token foi recusado ou expirou sem poder ser renovado. Gere um token novo.'
+  };
+  const detail = gmsg ? `${gmsg}${reason ? ` (${reason})` : ''}` : ([...new Set(lines)].slice(-1)[0] || '');
+  const message = [hints[code], detail].filter(Boolean).join(' — ').slice(0, 400) || 'Erro desconhecido do rclone';
   return { code, message };
 }
 
