@@ -9,6 +9,8 @@ import AddEditModal from './components/AddEditModal'
 import AuthModal from './components/AuthModal'
 import ManageCollectionsModal from './components/ManageCollectionsModal'
 import ManageCategoriesModal from './components/ManageCategoriesModal'
+import RcloneSettingsModal from './components/RcloneSettingsModal'
+import { apiFetch, UNAUTHORIZED_EVENT } from './api'
 
 export default function App() {
   const [photos, setPhotos] = useState([])
@@ -31,10 +33,41 @@ export default function App() {
   const [showManageMenu, setShowManageMenu] = useState(false)
   const [filterDate, setFilterDate] = useState('all')
   const [filterMonth, setFilterMonth] = useState('all')
+  const [showRcloneSettings, setShowRcloneSettings] = useState(false)
+  const [rcloneReason, setRcloneReason] = useState('')
 
   useEffect(() => {
     loadInitialData()
+    // Repor a sessão de administrador (cookie httpOnly) depois de recarregar a página
+    fetch('/api/session')
+      .then(res => res.json())
+      .then(data => setAuthenticated(!!data.authenticated))
+      .catch(() => {})
+
+    // Sessão expirada: volta ao modo público e pede login
+    const onUnauthorized = () => {
+      setAuthenticated(false)
+      setShowAuthModal(true)
+    }
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
   }, [])
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/logout', { method: 'POST' })
+    } catch (error) {
+      console.error('Erro ao terminar sessão:', error)
+    }
+    setAuthenticated(false)
+    setShowManageMenu(false)
+  }
+
+  const openRcloneSettings = (reason = '') => {
+    setRcloneReason(reason)
+    setShowRcloneSettings(true)
+    setShowManageMenu(false)
+  }
 
   const loadInitialData = async () => {
     await Promise.all([
@@ -92,7 +125,7 @@ export default function App() {
 
   const handleAddPhoto = async (photoData) => {
     try {
-      const res = await fetch('/api/photos', {
+      const res = await apiFetch('/api/photos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...photoData, timestamp: Date.now() })
@@ -116,11 +149,12 @@ export default function App() {
 
   const handleEditPhoto = async (photoData) => {
     try {
-      const res = await fetch('/api/photos', {
+      const res = await apiFetch('/api/photos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...photoData, id: editingPhoto.id, timestamp: Date.now() })
       })
+      if (!res.ok) return
       const updatedPhoto = await res.json()
       setPhotos(photos.map(p => p.id === updatedPhoto.id ? updatedPhoto : p))
       setShowEditModal(false)
@@ -136,7 +170,8 @@ export default function App() {
     if (!window.confirm('Tem a certeza que deseja eliminar esta fotografia?')) return
     
     try {
-      await fetch(`/api/photos/${id}`, { method: 'DELETE' })
+      const res = await apiFetch(`/api/photos/${id}`, { method: 'DELETE' })
+      if (!res.ok) return
       setPhotos(photos.filter(p => p.id !== id))
       setSelectedPhoto(null)
       setShowFullscreen(false)
@@ -154,11 +189,12 @@ export default function App() {
 
       const updatedPhoto = { ...photo, isFavorite: !photo.isFavorite }
       
-      const res = await fetch('/api/photos', {
+      const res = await apiFetch('/api/photos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedPhoto)
       })
+      if (!res.ok) return
       
       const savedPhoto = await res.json()
       setPhotos(photos.map(p => p.id === photoId ? savedPhoto : p))
@@ -210,7 +246,7 @@ const handleOpenFullscreen = (photo) => {
     
     if (authenticated) {
       try {
-        await fetch('/api/settings/active-collection', {
+        await apiFetch('/api/settings/active-collection', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ collectionId: collectionId === 'all' ? null : collectionId })
@@ -241,7 +277,8 @@ const handleOpenFullscreen = (photo) => {
     setShowManageMenu(false)
     if (window.confirm('🔄 Sincronizar pastas e fotos?\n\n• Cria coleções para pastas novas\n• Remove coleções de pastas eliminadas\n• Adiciona fotos novas automaticamente\n• Remove fotos de ficheiros eliminados')) {
       try {
-        const res = await fetch('/api/sync')
+        const res = await apiFetch('/api/sync')
+        if (!res.ok) return
         const data = await res.json()
         
         let message = `✅ Sincronização concluída!\n\n`;
@@ -282,37 +319,57 @@ const handleOpenFullscreen = (photo) => {
 
   const handleSyncDrive = async () => {
     setShowManageMenu(false)
-    
-    // Se estiver a ver "Todas as Coleções", não sabemos qual sincronizar
-    if (filterCollection === 'all' || !filterCollection) {
-      alert('⚠️ Por favor, selecione uma coleção específica no menu pendente antes de sincronizar com o Google Drive.')
+
+    // Sem credenciais do rclone: pede-as antes de tentar
+    try {
+      const st = await apiFetch('/api/admin/rclone')
+      if (!st.ok) return
+      const status = await st.json()
+      if (!status.configured) {
+        openRcloneSettings('Para sincronizar é preciso configurar primeiro a ligação ao Google Drive.')
+        return
+      }
+    } catch (error) {
+      console.error(error)
+      alert('❌ Erro de ligação ao servidor.')
       return
     }
 
-    if (window.confirm(`☁️ Sincronizar a coleção "${filterCollection}" com o Google Drive?\n\nIsto irá baixar as fotos mais recentes do Drive para o servidor.`)) {
-      try {
-        // 1. Chama o rclone no backend
-        const res = await fetch(`/api/sync-drive/${filterCollection}`, { method: 'POST' })
-        const data = await res.json()
+    const all = filterCollection === 'all' || !filterCollection
+    const question = all
+      ? '☁️ Sincronizar TODAS as coleções com o Google Drive?\n\nA pasta local das fotos fica igual à pasta do Drive (pastas que não existam no Drive são apagadas no servidor).'
+      : `☁️ Sincronizar a coleção "${filterCollection}" com o Google Drive?\n\nIsto irá baixar as fotos mais recentes do Drive para o servidor.`
+    if (!window.confirm(question)) return
 
-        if (!res.ok) {
-          alert('❌ Erro: ' + (data.error || 'Falha no rclone'))
+    try {
+      // 1. Chama o rclone no backend
+      const url = all ? '/api/sync-drive' : `/api/sync-drive/${encodeURIComponent(filterCollection)}`
+      const res = await apiFetch(url, { method: 'POST' })
+      if (res.status === 401) return
+      const data = await res.json()
+
+      if (!res.ok) {
+        if (data.code === 'RCLONE_NOT_CONFIGURED' || data.code === 'RCLONE_AUTH') {
+          openRcloneSettings(data.code === 'RCLONE_AUTH'
+            ? `O Google Drive recusou as credenciais. Atualize o token. (${data.error})`
+            : data.error)
           return
         }
-
-        // 2. Após o rclone terminar, atualiza a Base de Dados local (faz o scan)
-        alert('✅ Download do Drive concluído! A atualizar a Base de Dados...')
-        const resSync = await fetch('/api/sync')
-        const dataSync = await resSync.json()
-        
-        let message = `✅ Base de dados atualizada!\n\n📸 Novas fotos: ${dataSync.photos.new}\n🗑️ Removidas: ${dataSync.photos.removed}`
-        alert(message)
-        
-        loadInitialData() // Recarrega as fotos no ecrã
-      } catch (error) {
-        alert('❌ Erro de ligação ao servidor durante a sincronização.')
-        console.error(error)
+        alert('❌ Erro: ' + (data.error || 'Falha no rclone'))
+        return
       }
+
+      // 2. Após o rclone terminar, atualiza a Base de Dados local (faz o scan)
+      alert('✅ Download do Drive concluído! A atualizar a Base de Dados...')
+      const resSync = await apiFetch('/api/sync')
+      if (!resSync.ok) return
+      const dataSync = await resSync.json()
+
+      alert(`✅ Base de dados atualizada!\n\n📸 Novas fotos: ${dataSync.photos.new}\n🗑️ Removidas: ${dataSync.photos.removed}`)
+      loadInitialData() // Recarrega as fotos no ecrã
+    } catch (error) {
+      alert('❌ Erro de ligação ao servidor durante a sincronização.')
+      console.error(error)
     }
   }
 
@@ -481,6 +538,15 @@ const handleOpenFullscreen = (photo) => {
                           <span>Sincronizar</span>
                         </button>
 
+                        {/* Credenciais do rclone (Google Drive) */}
+                        <button
+                          onClick={() => openRcloneSettings()}
+                          className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
+                        >
+                          <span>🔑</span>
+                          <span>Ligação ao Drive</span>
+                        </button>
+
                         {/* "Atualizar BD" */}
                         <button
                           onClick={handleSync}
@@ -505,7 +571,7 @@ const handleOpenFullscreen = (photo) => {
                   </button>
                   
                   <button
-                    onClick={() => setAuthenticated(false)}
+                    onClick={handleLogout}
                     className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center space-x-2"
                     title="Terminar Sessão"
                   >
@@ -714,6 +780,12 @@ const handleOpenFullscreen = (photo) => {
           onSetActive={handleSetActive}
         />
       )}
+
+      <RcloneSettingsModal
+        isOpen={showRcloneSettings}
+        onClose={() => setShowRcloneSettings(false)}
+        reason={rcloneReason}
+      />
 
       {showManageCategories && (
         <ManageCategoriesModal

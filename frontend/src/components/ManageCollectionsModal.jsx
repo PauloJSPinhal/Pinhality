@@ -2,6 +2,7 @@
 // frontend/src/components/ManageCollectionsModal.jsx - VERSÃO FINAL
 // ========================================
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../api';
 
 export default function ManageCollectionsModal({ 
   isOpen, 
@@ -23,7 +24,7 @@ export default function ManageCollectionsModal({
     }
 
     try {
-      await fetch(`/api/collections/${collectionId}`, { method: 'DELETE' });
+      await apiFetch(`/api/collections/${collectionId}`, { method: 'DELETE' });
       onCollectionsUpdate();
       alert('Coleção eliminada com sucesso!');
     } catch (error) {
@@ -34,7 +35,7 @@ export default function ManageCollectionsModal({
 
   const handleSetActive = async (collectionId) => {
     try {
-      await fetch('/api/settings/active-collection', {
+      await apiFetch('/api/settings/active-collection', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ collectionId })
@@ -209,7 +210,7 @@ function CreateEditCollectionModal({ isOpen, onClose, onSave, collection = null 
     try {
       if (collection) {
         // Editar
-        await fetch(`/api/collections/${collection.id}`, {
+        await apiFetch(`/api/collections/${collection.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formData)
@@ -217,7 +218,7 @@ function CreateEditCollectionModal({ isOpen, onClose, onSave, collection = null 
         alert('Coleção atualizada!');
       } else {
         // Criar
-        await fetch('/api/collections', {
+        await apiFetch('/api/collections', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formData)

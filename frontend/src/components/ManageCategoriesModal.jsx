@@ -2,6 +2,7 @@
 // frontend/src/components/ManageCategoriesModal.jsx - VERSÃO CORRIGIDA
 // ========================================
 import { useState } from 'react';
+import { apiFetch } from '../api';
 
 export default function ManageCategoriesModal({ 
   isOpen, 
@@ -22,7 +23,7 @@ export default function ManageCategoriesModal({
       return;
     }
     try {
-      await fetch('/api/categories', {
+      await apiFetch('/api/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newCategory.trim() })
@@ -42,7 +43,7 @@ export default function ManageCategoriesModal({
       return;
     }
     try {
-      await fetch(`/api/categories/${encodeURIComponent(oldName)}`, {
+      await apiFetch(`/api/categories/${encodeURIComponent(oldName)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ newName: editValue.trim() })
@@ -71,7 +72,7 @@ export default function ManageCategoriesModal({
     }
     
     try {
-      await fetch(`/api/categories/${encodeURIComponent(categoryName)}`, {
+      await apiFetch(`/api/categories/${encodeURIComponent(categoryName)}`, {
         method: 'DELETE'
       });
       onCategoriesUpdate();

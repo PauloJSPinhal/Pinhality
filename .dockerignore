@@ -1,0 +1,9 @@
+.git
+**/node_modules
+**/dist
+dados_privados
+**/.env
+**/*.local
+backend/private
+docker-compose*.yml
+readme

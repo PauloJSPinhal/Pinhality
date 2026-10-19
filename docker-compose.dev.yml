@@ -1,32 +1,35 @@
-# Desenvolvimento local (o compose antigo): docker compose -f docker-compose.dev.yml up
+# Desenvolvimento local: docker compose -f docker-compose.dev.yml up --build
+# - Um só contentor com Vite (http://localhost:5173, hot reload) e nodemon (API na porta 3000).
+# - O código é montado do disco: as alterações aparecem logo.
+# - Fotos e .env vêm da pasta dados_privados (por omissão ../dados_privados, ao lado do repositório).
+#   Para usar outra pasta: DADOS_PRIVADOS=./dados_privados docker compose -f docker-compose.dev.yml up
 services:
-  web:
+  app:
     build:
-      context: ./frontend
+      context: .
       dockerfile: Dockerfile
       target: dev
     ports:
       - "5173:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - ../dados_privados/fotos_gdrive:/app/public/photos
-    environment:
-      - CHOKIDAR_USEPOLLING=true
-      - WATCHPACK_POLLING=true
-    depends_on:
-      - backend
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    command: ["npx", "nodemon", "--ignore", "*.json", "server.js"]
-    ports:
       - "3000:3000"
     env_file:
-      - ../dados_privados/.env
+      - path: ${DADOS_PRIVADOS:-../dados_privados}/.env
+        required: false
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - PHOTOS_DIR=/dados_privados/fotos_gdrive
+      # Credenciais do rclone e segredo da sessão fora do código montado
+      - PRIVATE_DIR=/private
+      - API_TARGET=http://localhost:3000
+      - CHOKIDAR_USEPOLLING=true
     volumes:
-      - ./backend:/app
-      - /app/node_modules
-      - ../dados_privados:/dados_privados
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
+      - /app/backend/node_modules
+      - /app/frontend/node_modules
+      - ${DADOS_PRIVADOS:-../dados_privados}:/dados_privados
+      - pinhality-dev-private:/private
+
+volumes:
+  pinhality-dev-private:

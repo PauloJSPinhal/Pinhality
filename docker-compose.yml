@@ -1,46 +1,45 @@
-# Compose para o Coolify (produção).
-# - Sem portas publicadas: o Coolify encaminha o domínio para o serviço "web" (porta 80).
-# - Sem caminhos fora do repositório (../dados_privados não existe no servidor do Coolify).
-# - Dados e fotos ficam em volumes nomeados, que sobrevivem a novos deploys.
-# - Variáveis (ADMIN_USER, ADMIN_PASS) definem-se no separador "Environment Variables" do Coolify.
+# Produção (Coolify): um só contentor com a API, as fotos e o site.
+# - Sem portas publicadas: o Coolify liga o domínio ao serviço "app", porta 3000.
+# - Sem caminhos fora do repositório; dados e fotos ficam em volumes nomeados.
+# - Variáveis definem-se no separador "Environment Variables" do Coolify.
 services:
-  web:
+  app:
     build:
-      context: ./frontend
+      context: .
       dockerfile: Dockerfile
-    expose:
-      - "80"
-    depends_on:
-      backend:
-        condition: service_healthy
-    restart: unless-stopped
-    environment:
-      - SERVICE_FQDN_WEB_80
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+      target: production
     expose:
       - "3000"
     environment:
+      - SERVICE_FQDN_APP_3000
       - NODE_ENV=production
       - PORT=3000
       - DATA_DIR=/data
+      - PHOTOS_DIR=/dados_privados/fotos_gdrive
       - ADMIN_USER=${ADMIN_USER:?Define ADMIN_USER no Coolify}
       - ADMIN_PASS=${ADMIN_PASS:?Define ADMIN_PASS no Coolify}
+      # Opcional: se vazio, é gerado um segredo e guardado em /data/private
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      # Opcional: alternativa ao ecrã de credenciais (rclone lê RCLONE_CONFIG_GDRIVE_*)
+      - RCLONE_CONFIG_GDRIVE_TYPE=drive
+      - RCLONE_CONFIG_GDRIVE_SCOPE=${GDRIVE_SCOPE:-drive.readonly}
+      - RCLONE_CONFIG_GDRIVE_TOKEN=${GDRIVE_TOKEN:-}
+      - RCLONE_CONFIG_GDRIVE_CLIENT_ID=${GDRIVE_CLIENT_ID:-}
+      - RCLONE_CONFIG_GDRIVE_CLIENT_SECRET=${GDRIVE_CLIENT_SECRET:-}
+      - RCLONE_CONFIG_GDRIVE_ROOT_FOLDER_ID=${GDRIVE_ROOT_FOLDER_ID:-}
+      - GDRIVE_REMOTE=${GDRIVE_REMOTE:-gdrive:fotos-site}
     volumes:
-      # photos.json, collections.json, categories.json, settings.json
+      # photos.json, collections.json, categories.json, settings.json e private/ (rclone.conf, segredo da sessão)
       - pinhality-data:/data
-      # fotos_gdrive/ e rclone.conf (o mesmo caminho que o server.js já usa)
+      # fotos_gdrive/<coleção>/...
       - pinhality-privado:/dados_privados
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/settings"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
 
 volumes:
   pinhality-data:

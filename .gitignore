@@ -39,3 +39,8 @@ frontend/public/photos
 
 # Ignorar ficheiros temporários
 *.txt
+
+# Credenciais do rclone e segredo da sessão (gerados pela app)
+backend/private
+private/
+rclone.conf

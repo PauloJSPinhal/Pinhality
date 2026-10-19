@@ -12,7 +12,8 @@ export default function AuthModal({ onLogin, onClose }) {
     setLoading(true)
 
     try {
-      // Pedido relativo: passa pelo proxy (Vite em dev, nginx em produção)
+      // Pedido relativo: em produção é o mesmo servidor; em dev passa pelo proxy do Vite.
+      // O servidor guarda a sessão num cookie httpOnly.
       const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -31,7 +32,7 @@ export default function AuthModal({ onLogin, onClose }) {
       }
     } catch (err) {
       // Erro de rede (ex: backend em baixo)
-      setError('Erro de ligação ao servidor. O Docker está a correr?')
+      setError('Erro de ligação ao servidor. O contentor está a correr?')
     } finally {
       setLoading(false)
     }

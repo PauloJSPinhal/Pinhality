@@ -2,6 +2,7 @@
 // frontend/src/components/AddEditModal.jsx - VERSÃO COM AUTO-DETECÇÃO
 // ========================================
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../api';
 
 export default function AddEditModal({ 
   isOpen, 
@@ -146,7 +147,7 @@ export default function AddEditModal({
         ? `photos/${formData.collection}/${formData.imageUrl.trim()}`
         : `photos/${formData.imageUrl.trim()}`;
       
-      const res = await fetch(`/api/exif?imagePath=${encodeURIComponent(fullPath)}`);
+      const res = await apiFetch(`/api/exif?imagePath=${encodeURIComponent(fullPath)}`);
       const exifData = await res.json();
       
       if (Object.keys(exifData).length === 0) {
