@@ -1,6 +1,8 @@
 // ========================================
 // frontend/src/components/PhotoGrid.jsx
 // ========================================
+import { thumbSrc } from '../api'
+
 export default function PhotoGrid({ photos, onPhotoClick }) {
   const photoList = Array.isArray(photos) ? photos : []
 
@@ -18,7 +20,7 @@ export default function PhotoGrid({ photos, onPhotoClick }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 mx-auto max-w-[1920px]">
       {photoList.map(photo => {
-        const imageUrl = `${photo.imageUrl}?t=${photo.timestamp || Date.now()}`
+        const imageUrl = thumbSrc(photo)
 
         return (
           <div
@@ -30,6 +32,8 @@ export default function PhotoGrid({ photos, onPhotoClick }) {
               <img
                 src={imageUrl}
                 alt={photo.title}
+                loading="lazy"
+                decoding="async"
                 className="w-full h-56 object-cover group-hover:scale-105 transition-transform duration-300"
               />
               {/* Título SOBRE a imagem REMOVIDO */}

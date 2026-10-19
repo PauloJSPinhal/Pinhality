@@ -7,6 +7,7 @@ const fsSync = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
+const { createMedia } = require('./media');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,6 +32,32 @@ const SESSION_SECRET_FILE = path.join(PRIVATE_DIR, 'session_secret');
 const LEGACY_RCLONE_CONF = process.env.LEGACY_RCLONE_CONF || path.join(path.dirname(PHOTOS_DIR), 'rclone.conf');
 const REMOTE_NAME = 'gdrive';
 
+// Miniaturas e versões web (WebP) geradas na sincronização; os originais ficam no Drive
+const DERIVED_DIR = path.resolve(process.env.DERIVED_DIR || path.join(path.dirname(PHOTOS_DIR), 'derivados'));
+const ORIGINAL_CACHE_DIR = path.resolve(process.env.ORIGINAL_CACHE_DIR || path.join(path.dirname(PHOTOS_DIR), 'cache-originais'));
+const ORIGINAL_CACHE_MB = Math.max(0, Number(process.env.ORIGINAL_CACHE_MB || 0) || 0);
+const ORIGINALS_PUBLIC = !/^(0|false|no|nao|não)$/i.test(process.env.ORIGINALS_PUBLIC || 'true');
+const KEEP_LOCAL_ORIGINALS = /^(1|true|yes|sim)$/i.test(process.env.KEEP_LOCAL_ORIGINALS || 'false');
+const SYNC_CONCURRENCY = Math.min(8, Math.max(1, Number(process.env.SYNC_CONCURRENCY || 3) || 3));
+
+const media = createMedia({
+  photosDir: PHOTOS_DIR,
+  derivedDir: DERIVED_DIR,
+  cacheDir: ORIGINAL_CACHE_DIR,
+  tmpBase: process.env.SYNC_TMP_DIR || path.join(path.dirname(PHOTOS_DIR), 'tmp-sync'),
+  cacheMb: ORIGINAL_CACHE_MB,
+  concurrency: SYNC_CONCURRENCY,
+  thumbSize: Number(process.env.THUMB_SIZE || 400) || 400,
+  webSize: Number(process.env.WEB_SIZE || 1600) || 1600,
+  keepLocalOriginals: KEEP_LOCAL_ORIGINALS,
+  getRcloneSource: (...a) => getRcloneSource(...a),
+  runRclone: (...a) => runRclone(...a),
+  rcloneEnvArgs: (...a) => rcloneEnvArgs(...a),
+  joinRemote: (...a) => joinRemote(...a),
+  describeRcloneError: (...a) => describeRcloneError(...a),
+  isValidName: (...a) => isValidCollectionName(...a)
+});
+
 // Frontend compilado (Vite build), servido pelo próprio Express em produção
 const FRONTEND_DIR = path.resolve(process.env.FRONTEND_DIR || path.join(__dirname, 'public'));
 
@@ -41,8 +68,30 @@ const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 app.set('trust proxy', true); // atrás do proxy do Coolify (HTTPS)
 app.disable('x-powered-by');
 app.use(express.json({ limit: '50mb' }));
-// Servir as fotos diretamente da pasta privada
+// Miniaturas (~400px) e versões web (~1600px) em WebP
+for (const kind of ['thumb', 'web']) {
+  app.get(`/photos/${kind}/:col/:file`, (req, res) => {
+    const file = media.derivedFile(kind, req.params.col, req.params.file);
+    if (!file) return res.status(404).end();
+    res.sendFile(file, { headers: { 'Content-Type': 'image/webp', 'Cache-Control': 'public, max-age=604800' } });
+  });
+}
+// Original em resolução completa, obtido do Drive a pedido (ou do disco no formato antigo)
+app.get('/photos/original/:col/:file', (req, res, next) => {
+  if (!ORIGINALS_PUBLIC) return requireAdmin(req, res, next);
+  next();
+}, (req, res) => media.serveOriginal(req, res, req.params.col, req.params.file).catch((error) => {
+  console.error('Erro ao servir original:', error.message);
+  if (!res.headersSent) res.status(500).json({ error: 'Erro ao obter o original' });
+}));
+// Formato antigo: originais guardados em fotos_gdrive/<coleção>/<ficheiro>
 app.use('/photos', express.static(PHOTOS_DIR));
+// Fotos já convertidas: o caminho antigo devolve a versão web
+app.get('/photos/:col/:file', (req, res) => {
+  const file = media.derivedFile('web', req.params.col, `${req.params.file}.webp`);
+  if (!file) return res.status(404).end();
+  res.sendFile(file, { headers: { 'Content-Type': 'image/webp', 'Cache-Control': 'public, max-age=604800' } });
+});
 
 // ========================================
 // AUTENTICAÇÃO - token assinado (HMAC) em cookie httpOnly ou "Authorization: Bearer"
@@ -225,132 +274,132 @@ app.put('/api/settings/active-collection', requireAdmin, async (req, res) => {
 // ROTA - SYNC completo (pastas + fotos)
 // ========================================
 
+// Imagens disponíveis = originais locais (formato antigo) + fotos convertidas (manifesto dos derivados)
+async function listAvailableImages() {
+  const images = new Map(); // imageUrl -> { col, file, exif }
+  const folders = new Set();
+  const items = await fs.readdir(PHOTOS_DIR, { withFileTypes: true }).catch(() => []);
+  for (const item of items) {
+    if (!item.isDirectory()) continue;
+    folders.add(item.name);
+    const files = await fs.readdir(path.join(PHOTOS_DIR, item.name)).catch(() => []);
+    for (const file of files) {
+      if (/\.(jpe?g|png)$/i.test(file)) images.set(`photos/${item.name}/${file}`, { col: item.name, file, exif: null });
+    }
+  }
+  for (const { col, file, entry } of media.listEntries()) {
+    folders.add(col);
+    images.set(`photos/${col}/${file}`, { col, file, exif: entry.exif || {} });
+  }
+  return { images, folders: [...folders] };
+}
+
+// Atualiza collections.json e photos.json a partir das imagens disponíveis
+async function rebuildDatabase() {
+  const { images, folders } = await listAvailableImages();
+
+  // FASE 1: COLEÇÕES
+  const collectionsData = await fs.readFile(COLLECTIONS_FILE, 'utf8');
+  let collections = JSON.parse(collectionsData);
+  const existingCollectionIds = new Set(collections.map(c => c.id));
+  let newCollections = 0;
+  let removedCollections = 0;
+
+  for (const folderName of folders) {
+    if (!existingCollectionIds.has(folderName)) {
+      collections.push({
+        id: folderName,
+        name: folderName
+          .split('-')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' '),
+        description: `Coleção gerada automaticamente`,
+        createdAt: new Date().toISOString(),
+        photoCount: 0
+      });
+      newCollections++;
+      console.log(`✨ Nova coleção criada: ${folderName}`);
+    }
+  }
+  const foldersSet = new Set(folders);
+  collections = collections.filter(col => {
+    if (foldersSet.has(col.id)) return true;
+    removedCollections++;
+    console.log(`🗑️ Coleção removida (pasta não existe): ${col.name}`);
+    return false;
+  });
+  await fs.writeFile(COLLECTIONS_FILE, JSON.stringify(collections, null, 2));
+
+  // FASE 2: FOTOS
+  const photosData = await fs.readFile(DATA_FILE, 'utf8');
+  let photos = JSON.parse(photosData);
+  const existingImageUrls = new Set(photos.map(p => p.imageUrl));
+  let newPhotos = 0;
+  let removedPhotos = 0;
+  let exifFilled = 0;
+
+  // Preenche os campos EXIF vazios (nunca apaga o que foi editado à mão)
+  const fillExif = (photo, exif) => {
+    if (!exif) return false;
+    let changed = false;
+    for (const field of media.EXIF_FIELDS) {
+      if (exif[field] && !photo[field]) {
+        photo[field] = exif[field];
+        changed = true;
+      }
+    }
+    return changed;
+  };
+
+  for (const [imageUrl, info] of images) {
+    if (existingImageUrls.has(imageUrl)) continue;
+    const newPhoto = {
+      id: Date.now() + Math.random(),
+      title: info.file.replace(/\.[^.]+$/, ''),
+      imageUrl,
+      collection: info.col,
+      categories: [],
+      location: '',
+      date: '',
+      time: '',
+      description: 'Adicionada automaticamente - editar para completar',
+      timestamp: Date.now()
+    };
+    fillExif(newPhoto, info.exif);
+    photos.push(newPhoto);
+    newPhotos++;
+  }
+
+  const validPhotos = [];
+  for (const photo of photos) {
+    const info = images.get(photo.imageUrl);
+    if (info) {
+      if (fillExif(photo, info.exif)) exifFilled++;
+      validPhotos.push(photo);
+      continue;
+    }
+    // Caminhos fora do formato photos/<coleção>/<ficheiro>: verifica o disco
+    const filePath = path.resolve(PHOTOS_DIR, String(photo.imageUrl || '').replace(/^photos\//, ''));
+    if (filePath.startsWith(PHOTOS_DIR + path.sep) && fsSync.existsSync(filePath)) {
+      validPhotos.push(photo);
+    } else {
+      removedPhotos++;
+      console.log(`🗑️ Foto removida (ficheiro não existe): ${photo.title}`);
+    }
+  }
+  photos = validPhotos;
+  await fs.writeFile(DATA_FILE, JSON.stringify(photos, null, 2));
+
+  return {
+    success: true,
+    collections: { total: collections.length, new: newCollections, removed: removedCollections },
+    photos: { total: photos.length, new: newPhotos, removed: removedPhotos, exifFilled }
+  };
+}
+
 app.get('/api/sync', requireAdmin, async (req, res) => {
   try {
-    const photosDir = PHOTOS_DIR;
-    
-    // FASE 1: ESCANEAR PASTAS E CRIAR COLEÇÕES
-    const items = await fs.readdir(photosDir, { withFileTypes: true });
-    const folders = items
-      .filter(item => item.isDirectory())
-      .map(item => item.name);
-    
-    const collectionsData = await fs.readFile(COLLECTIONS_FILE, 'utf8');
-    let collections = JSON.parse(collectionsData);
-    const existingCollectionIds = new Set(collections.map(c => c.id));
-    
-    let newCollections = 0;
-    let removedCollections = 0;
-    
-    // Criar coleções para pastas novas
-    for (const folderName of folders) {
-      if (!existingCollectionIds.has(folderName)) {
-        const newCollection = {
-          id: folderName,
-          name: folderName
-            .split('-')
-            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-            .join(' '),
-          description: `Coleção gerada automaticamente`,
-          createdAt: new Date().toISOString(),
-          photoCount: 0
-        };
-        collections.push(newCollection);
-        newCollections++;
-        console.log(`✨ Nova coleção criada: ${newCollection.name}`);
-      }
-    }
-    
-    // Remover coleções cujas pastas já não existem
-    const foldersSet = new Set(folders);
-    const collectionsToKeep = collections.filter(col => {
-      if (foldersSet.has(col.id)) {
-        return true;
-      } else {
-        removedCollections++;
-        console.log(`🗑️ Coleção removida (pasta não existe): ${col.name}`);
-        return false;
-      }
-    });
-    collections = collectionsToKeep;
-    
-    await fs.writeFile(COLLECTIONS_FILE, JSON.stringify(collections, null, 2));
-    
-    // FASE 2: ESCANEAR FOTOS E ADICIONAR À BASE DE DADOS
-    const photosData = await fs.readFile(DATA_FILE, 'utf8');
-    let photos = JSON.parse(photosData);
-    
-    const existingImageUrls = new Set(photos.map(p => p.imageUrl));
-    
-    let newPhotos = 0;
-    let removedPhotos = 0;
-    
-    // Escanear cada pasta/coleção
-    for (const folderName of folders) {
-      const folderPath = path.join(photosDir, folderName);
-      
-      try {
-        const files = await fs.readdir(folderPath);
-        const imageFiles = files.filter(file => /\.(jpe?g|png)$/i.test(file));
-        
-        // Adicionar fotos novas
-        for (const fileName of imageFiles) {
-          const imageUrl = `photos/${folderName}/${fileName}`;
-          
-          if (!existingImageUrls.has(imageUrl)) {
-            const newPhoto = {
-              id: Date.now() + Math.random(),
-              title: fileName.replace(/\.(jpe?g|png)$/i, ''),
-              imageUrl: imageUrl,
-              collection: folderName,
-              categories: [],
-              location: '',
-              date: '',
-              time: '',
-              description: 'Adicionada automaticamente - editar para completar',
-              timestamp: Date.now()
-            };
-            
-            photos.push(newPhoto);
-            newPhotos++;
-            console.log(`📸 Nova foto adicionada: ${fileName} [${folderName}]`);
-          }
-        }
-      } catch (err) {
-        console.error(`Erro ao ler pasta ${folderName}:`, err);
-      }
-    }
-    
-    // Remover fotos cujos ficheiros já não existem
-    const validPhotos = [];
-    for (const photo of photos) {
-       const filePath = path.join(PHOTOS_DIR, photo.imageUrl.replace(/^photos\//, ''));
-      try {
-        await fs.access(filePath);
-        validPhotos.push(photo);
-      } catch {
-        removedPhotos++;
-        console.log(`🗑️ Foto removida (ficheiro não existe): ${photo.title}`);
-      }
-    }
-    photos = validPhotos;
-    
-    await fs.writeFile(DATA_FILE, JSON.stringify(photos, null, 2));
-    
-    res.json({
-      success: true,
-      collections: {
-        total: collections.length,
-        new: newCollections,
-        removed: removedCollections
-      },
-      photos: {
-        total: photos.length,
-        new: newPhotos,
-        removed: removedPhotos
-      }
-    });
-    
+    res.json(await rebuildDatabase());
   } catch (error) {
     console.error('Erro ao sincronizar:', error);
     res.status(500).json({ error: 'Erro ao sincronizar pastas e fotos' });
@@ -689,10 +738,11 @@ app.get('/api/photos', async (req, res) => {
         const pathParts = photo.imageUrl.split('/');
         if (pathParts.length > 2) {
           const detectedCollection = pathParts[1];
-          return { ...photo, collection: detectedCollection };
+          photo = { ...photo, collection: detectedCollection };
         }
       }
-      return photo;
+      // URLs da miniatura, da versão web e do original (calculados, não guardados)
+      return { ...photo, ...media.urlsFor(photo.imageUrl) };
     });
     
     res.json(photos);
@@ -707,8 +757,11 @@ app.post('/api/photos', requireAdmin, async (req, res) => {
     const data = await fs.readFile(DATA_FILE, 'utf8');
     let photos = JSON.parse(data);
     
+    const existing = req.body.id !== undefined ? photos.find(p => p.id === req.body.id) : null;
+    const { thumbUrl, webUrl, originalUrl, mediaVersion, width, height, originalSize, ...body } = req.body;
     const newPhoto = {
-      ...req.body,
+      ...(existing || {}),
+      ...body,
       id: req.body.id || Date.now()
     };
     
@@ -720,7 +773,7 @@ app.post('/api/photos', requireAdmin, async (req, res) => {
     await fs.writeFile(DATA_FILE, JSON.stringify(photos, null, 2));
     
     console.log(`✅ Foto guardada: ${newPhoto.title} [${newPhoto.collection || 'Sem coleção'}]`);
-    res.json(newPhoto);
+    res.json({ ...newPhoto, ...media.urlsFor(newPhoto.imageUrl) });
   } catch (error) {
     console.error('Erro ao guardar foto:', error);
     res.status(500).json({ error: 'Erro ao guardar foto' });
@@ -749,152 +802,27 @@ app.delete('/api/photos/:id', requireAdmin, async (req, res) => {
 // ROTA - EXIF
 // ========================================
 
-app.get('/api/exif', (req, res) => {
+app.get('/api/exif', async (req, res) => {
   const { imagePath } = req.query;
   if (!imagePath) return res.status(400).json({ error: 'imagePath é obrigatório' });
   
-  const cleanImagePath = imagePath.trim();
-  if (!cleanImagePath.startsWith('photos/') || !/\.(jpe?g)$/i.test(cleanImagePath)) {
+  const cleanImagePath = String(imagePath).trim();
+  if (!cleanImagePath.startsWith('photos/') || !media.IMAGE_RE.test(cleanImagePath)) {
     return res.status(400).json({ error: 'Caminho inválido' });
   }
-  
-  // O caminho tem de ficar dentro da pasta das fotos (sem "../")
+
+  // 1. EXIF guardado na sincronização (o original fica no Drive)
+  const entry = media.entryFor(cleanImagePath);
+  if (entry) return res.json(entry.exif || {});
+
+  // 2. Formato antigo: original no disco. O caminho tem de ficar dentro da pasta das fotos.
   const fullPath = path.resolve(PHOTOS_DIR, cleanImagePath.replace(/^photos\//, ''));
   if (!fullPath.startsWith(PHOTOS_DIR + path.sep)) {
     return res.status(400).json({ error: 'Caminho inválido' });
   }
-  const args = ['-j', '-DateTimeOriginal', '-ISOSpeedRatings', '-ISO', '-FNumber', '-ExposureTime', '-FocalLength',
-    '-Make', '-Model', '-LensModel', '-ExposureProgram', '-MeteringMode', '-ExposureCompensation', '-WhiteBalance',
-    '-FocusMode', '-Copyright', '-GPSLatitude', '-GPSLongitude', '-GPSLatitudeRef', '-GPSLongitudeRef', fullPath];
-  
-  execFile('exiftool', args, { timeout: 30 * 1000 }, (error, stdout, stderr) => {
-    if (error) {
-      console.error('❌ Erro no exiftool:', stderr || error.message);
-      return res.status(500).json({ error: 'Erro ao executar exiftool' });
-    }
-    
-    try {
-      const data = JSON.parse(stdout)[0] || {};
-      const result = {};
-      
-      if (data.DateTimeOriginal) {
-        const [datePart, timePart] = data.DateTimeOriginal.split(' ');
-        if (datePart && timePart) {
-          const [y, m, d] = datePart.split(':');
-          result.date = `${y}-${m}-${d}`;
-          result.time = timePart;
-        }
-      }
-      
-      if (data.ISOSpeedRatings) result.iso = String(data.ISOSpeedRatings);
-      else if (data.ISO) result.iso = String(data.ISO);
-      
-      if (data.FNumber) result.aperture = parseFloat(data.FNumber).toFixed(1);
-      
-      if (data.ExposureTime) {
-        const et = data.ExposureTime;
-        result.shutterSpeed = et.includes('/') ? et : `1/${Math.round(1 / parseFloat(et))}`;
-      }
-      
-      if (data.FocalLength) {
-        const flStr = String(data.FocalLength);
-        const num = flStr.match(/[\d.]+/)?.[0];
-        if (num) result.focalLength = num;
-      }
-      
-      if (data.Make || data.Model) {
-        let camera = '';
-        const make = data.Make || '';
-        const model = data.Model || '';
-        
-        if (model.toLowerCase().startsWith(make.toLowerCase())) {
-          camera = model.trim();
-        } else {
-          camera = [make, model].filter(Boolean).join(' ').trim();
-        }
-        
-        result.camera = camera;
-      }
-      
-      if (data.LensModel) result.lens = data.LensModel;
-      
-      if (data.ExposureProgram !== undefined) {
-        const modes = {
-          0: 'Não definido', 1: 'Manual', 2: 'Automático',
-          3: 'Prioridade Abertura', 4: 'Prioridade Velocidade',
-          5: 'Criativo', 6: 'Ação', 7: 'Retrato', 8: 'Paisagem',
-          'Manual': 'Manual', 'Program AE': 'Automático',
-          'Aperture-priority AE': 'Prioridade Abertura',
-          'Shutter speed priority AE': 'Prioridade Velocidade',
-          'Creative (Slow speed)': 'Criativo', 'Action (High speed)': 'Ação',
-          'Portrait': 'Retrato', 'Landscape': 'Paisagem'
-        };
-        result.exposureMode = modes[data.ExposureProgram] || data.ExposureProgram;
-      }
-      
-      if (data.MeteringMode !== undefined) {
-        const modes = {
-          0: 'Desconhecido', 1: 'Média', 2: 'Ponderada ao Centro',
-          3: 'Pontual', 4: 'Multi-Pontual', 5: 'Padrão', 6: 'Parcial', 255: 'Outro',
-          'Average': 'Média', 'Center-weighted average': 'Ponderada ao Centro',
-          'Spot': 'Pontual', 'Multi-spot': 'Multi-Pontual',
-          'Multi-segment': 'Matricial', 'Pattern': 'Padrão', 'Partial': 'Parcial',
-          'Evaluative': 'Matricial', 'Multi': 'Matricial'
-        };
-        result.meteringMode = modes[data.MeteringMode] || data.MeteringMode;
-      }
-      
-      if (data.ExposureCompensation !== undefined) {
-        const ev = parseFloat(data.ExposureCompensation);
-        result.exposureCompensation = ev >= 0 ? `+${ev.toFixed(1)} EV` : `${ev.toFixed(1)} EV`;
-      }
-      
-      if (data.WhiteBalance !== undefined) {
-        const wb = { 0: 'Auto', 1: 'Manual' };
-        result.whiteBalance = wb[data.WhiteBalance] || data.WhiteBalance;
-      }
-      
-      if (data.FocusMode) result.focusMode = data.FocusMode;
-      if (data.Copyright) result.copyright = data.Copyright;
-      
-      if (data.GPSLatitude && data.GPSLatitudeRef) {
-        let lat = data.GPSLatitude;
-        const latRef = data.GPSLatitudeRef;
-        
-        if (typeof lat === 'string') {
-          lat = lat.replace(/deg/gi, '°').replace(/"/g, '"');
-          result.gpsLatitude = `${latRef} ${lat}`;
-        } else if (Array.isArray(lat) && lat.length === 3) {
-          const [deg, min, sec] = lat;
-          result.gpsLatitude = `${latRef} ${deg}° ${min}' ${sec.toFixed(1)}"`;
-        } else {
-          result.gpsLatitude = `${latRef} ${lat}`;
-        }
-      }
-      
-      if (data.GPSLongitude && data.GPSLongitudeRef) {
-        let lon = data.GPSLongitude;
-        const lonRef = data.GPSLongitudeRef;
-        
-        if (typeof lon === 'string') {
-          lon = lon.replace(/deg/gi, '°').replace(/"/g, '"');
-          result.gpsLongitude = `${lonRef} ${lon}`;
-        } else if (Array.isArray(lon) && lon.length === 3) {
-          const [deg, min, sec] = lon;
-          result.gpsLongitude = `${lonRef} ${deg}° ${min}' ${sec.toFixed(1)}"`;
-        } else {
-          result.gpsLongitude = `${lonRef} ${lon}`;
-        }
-      }
-      
-      res.json(result);
-    } catch (parseError) {
-      console.error('💥 Erro ao parsear JSON do exiftool:', parseError);
-      res.status(500).json({ error: 'Erro ao processar resposta do exiftool' });
-    }
-  });
+  if (!fsSync.existsSync(fullPath)) return res.json({});
+  res.json(await media.readExif(fullPath));
 });
-
 
 // ========================================
 // ROTAS - AUTENTICAÇÃO (LOGIN / SESSÃO / LOGOUT)
@@ -1024,16 +952,23 @@ async function getRcloneSource() {
   return null;
 }
 
-function runRclone(args, src, timeoutMs) {
+// Ambiente e argumentos para correr o rclone com a configuração escolhida
+function rcloneEnvArgs(src) {
   const env = { ...process.env };
-  const fullArgs = [...args];
+  const args = [];
   if (src.source !== 'env') {
     // Ficheiro guardado tem prioridade: as variáveis de ambiente não se podem sobrepor
     for (const key of Object.keys(env)) if (key.startsWith('RCLONE_CONFIG_GDRIVE_')) delete env[key];
-    fullArgs.push('--config', src.conf);
+    args.push('--config', src.conf);
   }
+  return { env, args };
+}
+
+function runRclone(args, src, timeoutMs) {
+  const { env, args: extra } = rcloneEnvArgs(src);
+  const fullArgs = [...args, ...extra];
   return new Promise((resolve) => {
-    execFile('rclone', fullArgs, { env, timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile('rclone', fullArgs, { env, timeout: timeoutMs, maxBuffer: 200 * 1024 * 1024 }, (error, stdout, stderr) => {
       resolve({ ok: !error, stdout: stdout || '', stderr: stderr || '', error });
     });
   });
@@ -1179,6 +1114,8 @@ app.post('/api/admin/rclone/test', requireAdmin, async (req, res) => {
 // ========================================
 // ROTA - SINCRONIZAR COM GOOGLE DRIVE (rclone)
 // ========================================
+// A sincronização corre em segundo plano; o estado vê-se em GET /api/sync-drive/status.
+// Com ?wait=1 a resposta só chega no fim (útil para scripts e testes).
 async function syncDrive(req, res, collectionName) {
   if (collectionName !== null && !isValidCollectionName(collectionName)) {
     return res.status(400).json({ error: 'Nome de coleção inválido' });
@@ -1186,36 +1123,24 @@ async function syncDrive(req, res, collectionName) {
   const src = await getRcloneSource();
   if (!src) return res.status(409).json(RCLONE_NOT_CONFIGURED);
 
-  let remote = src.remote;
-  let target = PHOTOS_DIR;
-  if (collectionName !== null) {
-    remote = joinRemote(src.remote, collectionName);
-    target = path.join(PHOTOS_DIR, collectionName);
-  } else {
-    // Proteção: sincronizar uma pasta remota vazia apagaria todas as fotos locais
-    const check = await runRclone(['lsd', src.remote, '--retries', '1'], src, 60 * 1000);
-    if (!check.ok) {
-      const err = describeRcloneError(check);
-      return res.status(err.code === 'RCLONE_AUTH' ? 409 : 502).json({ error: err.message, code: err.code });
-    }
-    if (!check.stdout.trim()) {
-      return res.status(400).json({ error: `A pasta remota ${src.remote} não tem subpastas. Verifique o ID da pasta e o caminho.`, code: 'RCLONE_EMPTY' });
-    }
+  let started;
+  try {
+    started = await media.runSync(collectionName, rebuildDatabase);
+  } catch (error) {
+    return res.status(409).json({ error: error.message, code: error.code, job: media.jobStatus() });
   }
+  console.log(`☁️ Sincronização iniciada: ${collectionName || 'todas as coleções'} (${src.source})`);
+  if (!req.query.wait) return res.status(202).json({ started: true, job: started.job });
 
-  await fs.mkdir(target, { recursive: true });
-  console.log(`☁️ rclone sync ${remote} → ${target} (${src.source})`);
-  const result = await runRclone(['sync', remote, target, '-v'], src, 30 * 60 * 1000);
-  if (!result.ok) {
-    const err = describeRcloneError(result);
-    console.error(`❌ Erro no rclone: ${err.message}`);
-    return res.status(err.code === 'RCLONE_AUTH' ? 409 : 500).json({ error: `Erro ao sincronizar com o Google Drive: ${err.message}`, code: err.code });
+  const job = await started.promise;
+  if (job.error) {
+    const status = ['RCLONE_AUTH', 'RCLONE_NOT_CONFIGURED'].includes(job.code) ? 409 : job.code === 'RCLONE_EMPTY' ? 400 : 502;
+    return res.status(status).json({ error: job.error, code: job.code, job });
   }
-  const label = collectionName === null ? 'todas as coleções' : `a coleção ${collectionName}`;
-  console.log(`☁️ rclone concluído para ${label}`);
-  res.json({ success: true, message: `Sincronização de ${label} concluída!` });
+  res.json({ success: true, job });
 }
 
+app.get('/api/sync-drive/status', requireAdmin, (req, res) => res.json(media.jobStatus()));
 app.post('/api/sync-drive', requireAdmin, (req, res) => syncDrive(req, res, null));
 app.post('/api/sync-drive/:collectionName', requireAdmin, (req, res) => syncDrive(req, res, req.params.collectionName));
 
@@ -1244,7 +1169,8 @@ if (fsSync.existsSync(INDEX_HTML)) {
 // ========================================
 // INICIA O SERVIDOR
 // ========================================
-Promise.all([initDataFiles(), loadSessionSecret()]).then(() => {
+Promise.all([initDataFiles(), loadSessionSecret(), media.init()]).then(() => {
+  if (!media.sharpAvailable()) console.warn('⚠️ sharp não carregou: a sincronização não consegue gerar miniaturas.');
   if (!process.env.ADMIN_USER || !process.env.ADMIN_PASS) {
     console.warn('⚠️ ADMIN_USER/ADMIN_PASS não definidos: o login de administrador está desativado.');
   }

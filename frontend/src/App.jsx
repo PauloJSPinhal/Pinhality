@@ -35,6 +35,7 @@ export default function App() {
   const [filterMonth, setFilterMonth] = useState('all')
   const [showRcloneSettings, setShowRcloneSettings] = useState(false)
   const [rcloneReason, setRcloneReason] = useState('')
+  const [syncJob, setSyncJob] = useState(null)
 
   useEffect(() => {
     loadInitialData()
@@ -337,12 +338,12 @@ const handleOpenFullscreen = (photo) => {
 
     const all = filterCollection === 'all' || !filterCollection
     const question = all
-      ? '☁️ Sincronizar TODAS as coleções com o Google Drive?\n\nA pasta local das fotos fica igual à pasta do Drive (pastas que não existam no Drive são apagadas no servidor).'
-      : `☁️ Sincronizar a coleção "${filterCollection}" com o Google Drive?\n\nIsto irá baixar as fotos mais recentes do Drive para o servidor.`
+      ? '☁️ Sincronizar TODAS as coleções com o Google Drive?\n\nSão criadas miniaturas e versões web das fotos novas ou alteradas; as fotos apagadas do Drive saem do site. Os originais ficam no Drive.'
+      : `☁️ Sincronizar a coleção "${filterCollection}" com o Google Drive?\n\nSão criadas miniaturas e versões web das fotos novas ou alteradas. Os originais ficam no Drive.`
     if (!window.confirm(question)) return
 
     try {
-      // 1. Chama o rclone no backend
+      // 1. Inicia a sincronização (corre em segundo plano no servidor)
       const url = all ? '/api/sync-drive' : `/api/sync-drive/${encodeURIComponent(filterCollection)}`
       const res = await apiFetch(url, { method: 'POST' })
       if (res.status === 401) return
@@ -355,21 +356,59 @@ const handleOpenFullscreen = (photo) => {
             : data.error)
           return
         }
-        alert('❌ Erro: ' + (data.error || 'Falha no rclone'))
+        if (data.code === 'SYNC_RUNNING') {
+          setSyncJob(data.job)
+          pollSyncJob()
+          return
+        }
+        alert('❌ Erro: ' + (data.error || 'Falha na sincronização'))
         return
       }
 
-      // 2. Após o rclone terminar, atualiza a Base de Dados local (faz o scan)
-      alert('✅ Download do Drive concluído! A atualizar a Base de Dados...')
-      const resSync = await apiFetch('/api/sync')
-      if (!resSync.ok) return
-      const dataSync = await resSync.json()
-
-      alert(`✅ Base de dados atualizada!\n\n📸 Novas fotos: ${dataSync.photos.new}\n🗑️ Removidas: ${dataSync.photos.removed}`)
-      loadInitialData() // Recarrega as fotos no ecrã
+      setSyncJob(data.job)
+      pollSyncJob()
     } catch (error) {
       alert('❌ Erro de ligação ao servidor durante a sincronização.')
       console.error(error)
+    }
+  }
+
+  // 2. Acompanha o progresso até terminar
+  const pollSyncJob = async () => {
+    for (;;) {
+      await new Promise(r => setTimeout(r, 1500))
+      let job
+      try {
+        const res = await apiFetch('/api/sync-drive/status')
+        if (!res.ok) { setSyncJob(null); return }
+        job = await res.json()
+      } catch (error) {
+        console.error(error)
+        continue
+      }
+      setSyncJob(job)
+      if (job.running) continue
+
+      setSyncJob(null)
+      if (job.error) {
+        if (job.code === 'RCLONE_AUTH' || job.code === 'RCLONE_NOT_CONFIGURED') {
+          openRcloneSettings(`O Google Drive recusou as credenciais. Atualize o token. (${job.error})`)
+        } else {
+          alert('❌ Erro na sincronização: ' + job.error)
+        }
+        return
+      }
+      const mb = (b) => (b / 1024 / 1024).toFixed(1)
+      let message = `✅ Sincronização concluída!\n\n`
+      message += `📸 Processadas: ${job.processed}\n`
+      message += `⏭️ Sem alterações: ${job.skipped}\n`
+      if (job.removed) message += `🗑️ Removidas do Drive: ${job.removed}\n`
+      if (job.failed?.length) message += `⚠️ Falhadas: ${job.failed.length} (${job.failed.slice(0, 3).map(f => f.file).join(', ')})\n`
+      if (job.processed) message += `\n💾 ${mb(job.bytesOriginal)} MB de originais → ${mb(job.bytesDerived)} MB no servidor`
+      if (job.db) message += `\n\n📁 Coleções: ${job.db.collections.total} | Fotos: ${job.db.photos.total} (novas: ${job.db.photos.new})`
+      alert(message)
+      loadInitialData() // Recarrega as fotos no ecrã
+      return
     }
   }
 
@@ -716,6 +755,21 @@ const handleOpenFullscreen = (photo) => {
           </button>
         </div>
       </footer>          
+
+      {/* Progresso da sincronização com o Google Drive */}
+      {syncJob && syncJob.running && (
+        <div className="fixed bottom-4 right-4 z-50 bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-4 w-72 text-sm text-white">
+          <p className="font-semibold mb-1">☁️ A sincronizar ({syncJob.scope})</p>
+          <p className="text-gray-400 mb-2">{syncJob.phase}{syncJob.total ? `: ${syncJob.done}/${syncJob.total}` : ''}</p>
+          <div className="w-full h-2 bg-gray-700 rounded">
+            <div
+              className="h-2 bg-blue-500 rounded transition-all"
+              style={{ width: `${syncJob.total ? Math.round((syncJob.done / syncJob.total) * 100) : 5}%` }}
+            />
+          </div>
+          {syncJob.skipped > 0 && <p className="text-gray-500 mt-2">{syncJob.skipped} sem alterações</p>}
+        </div>
+      )}
 
       {/* Modals */}
       {/* Modal de detalhes da foto */}

@@ -9,3 +9,18 @@ export async function apiFetch(url, options = {}) {
   }
   return res
 }
+
+// Caminhos de imagem ("photos/<coleção>/<ficheiro>") -> URL com cada parte codificada
+export function mediaUrl(relPath, version) {
+  if (!relPath) return ''
+  const url = '/' + String(relPath).replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/')
+  return version ? `${url}?v=${encodeURIComponent(version)}` : url
+}
+
+// Miniatura (~400px) para a grelha, versão web (~1600px) para o detalhe e o ecrã inteiro
+export const thumbSrc = (photo) => mediaUrl(photo.thumbUrl || photo.imageUrl, photo.mediaVersion || photo.timestamp)
+export const webSrc = (photo) => mediaUrl(photo.webUrl || photo.imageUrl, photo.mediaVersion || photo.timestamp)
+export const originalSrc = (photo, download = false) => {
+  const url = mediaUrl(photo.originalUrl || photo.imageUrl)
+  return download ? `${url}?download=1` : url
+}

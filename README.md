@@ -30,6 +30,8 @@ docker compose -f docker-compose.dev.yml up --build
   ```
 - As fotos chegam pela sincronização: **Gerir → 🔑 Ligação ao Drive** (token + pasta), depois **Sincronizar** com
   "Todas as Coleções" e **Atualizar BD**.
+- Depois de mudar dependências (ex.: o `sharp`), recrie os `node_modules` do contentor:
+  `docker compose -f docker-compose.dev.yml up --build -V`
 - O volume de dados começa vazio: galeria vazia, sem coleções, com as categorias por omissão.
   (Em produção, um volume novo recebe os JSON do repositório como dados iniciais.)
 - Começar do zero (apaga dados, fotos e credenciais): `docker compose -f docker-compose.dev.yml down -v`
@@ -49,12 +51,15 @@ docker compose -f docker-compose.dev.yml up --build
 | `GDRIVE_ROOT_FOLDER_ID` | não | ID da pasta das fotos (com `GDRIVE_TOKEN`) |
 | `GDRIVE_CLIENT_ID` / `GDRIVE_CLIENT_SECRET` | não | só se usou um client ID próprio |
 | `GDRIVE_REMOTE` | não | caminho remoto com `GDRIVE_TOKEN` (por omissão `gdrive:fotos-site`; com `GDRIVE_ROOT_FOLDER_ID` use `gdrive:`) |
+| `ORIGINAL_CACHE_MB` | não | cache em disco dos originais pedidos ao Drive, em MB (por omissão `0` = sem cache) |
+| `ORIGINALS_PUBLIC` | não | `true` (por omissão): qualquer visitante pode abrir o original; `false`: só o administrador |
+| `SYNC_CONCURRENCY` | não | imagens processadas em paralelo na sincronização (por omissão `3`) |
 
 4. **Redeploy** (um restart não aplica variáveis novas). O ficheiro `.env` não é lido pelo Coolify.
 
 Volumes persistentes:
 - `pinhality-data` → `/data`: JSON da base de dados e `private/` (credenciais do rclone e segredo da sessão, permissões 600)
-- `pinhality-privado` → `/dados_privados`: `fotos_gdrive/<coleção>/...`
+- `pinhality-privado` → `/dados_privados`: `derivados/<coleção>/thumb|web/*.webp` + `manifest.json` (e `fotos_gdrive/` no formato antigo)
 
 ## Ligação ao Google Drive (área de administração)
 
@@ -74,8 +79,33 @@ Os segredos ficam só no servidor e nunca são devolvidos ao browser. Campos sec
 mantêm o valor guardado. Se tentar **Sincronizar** sem credenciais (ou com um token recusado),
 o ecrã abre automaticamente para as introduzir.
 
-**Sincronizar** com uma coleção selecionada copia só essa pasta; com "Todas as Coleções" a pasta
-local passa a ser igual à pasta do Drive. Depois, a base de dados é atualizada (**Atualizar BD**).
+**Sincronizar** com uma coleção selecionada trata só essa pasta; com "Todas as Coleções" trata todas.
+A sincronização corre em segundo plano e o progresso aparece no canto do ecrã. No fim, a base de dados
+é atualizada automaticamente.
+
+## Miniaturas, versões web e originais
+
+Para poupar espaço, o servidor **não guarda os originais**. Em cada sincronização, para cada imagem do Drive
+(`.jpg`, `.png`, `.webp`, `.tif`) nova ou alterada:
+
+1. descarrega-a para uma pasta temporária;
+2. lê o EXIF (data, hora, câmara, objetiva, ISO, abertura, ...) e preenche os campos vazios da foto no `photos.json`
+   (o que foi editado à mão não é alterado);
+3. gera uma miniatura WebP de ~400 px (grelha) e uma versão WebP de ~1600 px (detalhe e ecrã inteiro);
+4. apaga o original temporário.
+
+Fotos sem alterações no Drive (mesmo hash/tamanho/data) são saltadas; fotos apagadas do Drive perdem as
+miniaturas e saem do site. Se o Drive não devolver nenhuma pasta, nada é apagado.
+
+O **original** em resolução completa abre-se no detalhe da foto (**Ver original** / **Descarregar**) e vem do Drive
+a pedido (`/photos/original/<coleção>/<ficheiro>`). Com `ORIGINAL_CACHE_MB` os originais pedidos ficam em cache
+(os mais antigos saem quando se passa o limite).
+
+Formato antigo: originais que ainda estejam em `fotos_gdrive/<coleção>/` continuam a aparecer. Na sincronização
+seguinte, os que existem no Drive são convertidos e o original local é apagado.
+
+URLs: `photos/thumb/<coleção>/<ficheiro>.webp`, `photos/web/<coleção>/<ficheiro>.webp`, `photos/original/<coleção>/<ficheiro>`.
+O `imageUrl` das fotos continua a ser `photos/<coleção>/<ficheiro>` (e devolve a versão web).
 
 Prioridade da configuração: ecrã de administração → variáveis `GDRIVE_*` → `rclone.conf` antigo em `/dados_privados` (só produção antiga).
 

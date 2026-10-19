@@ -2,6 +2,7 @@
 // frontend/src/components/PhotoFullscreen.jsx
 // ========================================
 import { useEffect, useRef } from 'react';
+import { webSrc, originalSrc } from '../api';
 
 export default function PhotoFullscreen({ 
   photo, 
@@ -80,7 +81,7 @@ export default function PhotoFullscreen({
       onClick={onClose}
     >
       <img
-        src={`/${photo.imageUrl}`}
+        src={webSrc(photo)}
         alt={photo.title}
         className="max-h-screen max-w-screen object-contain"
         onClick={(e) => e.stopPropagation()}
@@ -120,6 +121,17 @@ export default function PhotoFullscreen({
         className="absolute top-6 right-6 flex gap-3 z-50"
         onClick={(e) => e.stopPropagation()}
       >
+        <a
+          href={originalSrc(photo)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white transition-all hover:scale-110"
+          title="Abrir o original em resolução completa"
+        >
+          <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+        </a>
         <button
           onClick={handleFavoriteToggle}
           className="p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white transition-all hover:scale-110"

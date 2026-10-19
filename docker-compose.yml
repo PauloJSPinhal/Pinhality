@@ -28,10 +28,15 @@ services:
       - RCLONE_CONFIG_GDRIVE_CLIENT_SECRET=${GDRIVE_CLIENT_SECRET:-}
       - RCLONE_CONFIG_GDRIVE_ROOT_FOLDER_ID=${GDRIVE_ROOT_FOLDER_ID:-}
       - GDRIVE_REMOTE=${GDRIVE_REMOTE:-gdrive:fotos-site}
+      # Originais: servidos a pedido a partir do Drive; cache em disco opcional (MB, 0 = sem cache)
+      - ORIGINAL_CACHE_MB=${ORIGINAL_CACHE_MB:-0}
+      - ORIGINALS_PUBLIC=${ORIGINALS_PUBLIC:-true}
+      # Imagens processadas em paralelo na sincronização
+      - SYNC_CONCURRENCY=${SYNC_CONCURRENCY:-3}
     volumes:
       # photos.json, collections.json, categories.json, settings.json e private/ (rclone.conf, segredo da sessão)
       - pinhality-data:/data
-      # fotos_gdrive/<coleção>/...
+      # derivados/<coleção>/thumb|web/*.webp (+ manifest.json); fotos_gdrive/ só no formato antigo
       - pinhality-privado:/dados_privados
     restart: unless-stopped
     healthcheck:

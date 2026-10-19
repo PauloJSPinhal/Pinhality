@@ -1,6 +1,7 @@
 // ========================================
 // frontend/src/components/PhotoModal.jsx
 // ========================================
+import { webSrc, originalSrc } from '../api'
 
 export default function PhotoModal({ photo, onClose, onEdit, onDelete, onOpenFullscreen, authenticated }) {
   return (
@@ -17,7 +18,7 @@ export default function PhotoModal({ photo, onClose, onEdit, onDelete, onOpenFul
           {/* Imagem */}
           <div className="lg:col-span-2 flex items-center justify-center min-h-0">
             <img
-              src={`/${photo.imageUrl}`}
+              src={webSrc(photo)}
               alt={photo.title}
               className="max-h-[60vh] sm:max-h-[70vh] w-auto object-contain cursor-zoom-in"
               onClick={() => onOpenFullscreen(photo)}
@@ -41,6 +42,26 @@ export default function PhotoModal({ photo, onClose, onEdit, onDelete, onOpenFul
             </button>
 
             <h2 className="text-xl font-bold text-white mb-3">{photo.title}</h2>
+
+            {/* Original em resolução completa (vem do Google Drive a pedido) */}
+            <div className="flex gap-2 mb-4">
+              <a
+                href={originalSrc(photo)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center"
+                title="Abrir o original em resolução completa"
+              >
+                🔍 Ver original{photo.width && photo.height ? ` (${photo.width}×${photo.height})` : ''}
+              </a>
+              <a
+                href={originalSrc(photo, true)}
+                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center"
+                title="Descarregar o original"
+              >
+                ⬇️ Descarregar{photo.originalSize ? ` (${(photo.originalSize / 1024 / 1024).toFixed(1)} MB)` : ''}
+              </a>
+            </div>
 
             {photo.description && (
               <p className="text-gray-300 mb-4">{photo.description}</p>

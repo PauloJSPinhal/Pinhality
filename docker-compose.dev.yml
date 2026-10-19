@@ -23,6 +23,8 @@ services:
       - ADMIN_USER=${ADMIN_USER:-admin}
       - ADMIN_PASS=${ADMIN_PASS:-admin}
       - SESSION_SECRET=${SESSION_SECRET:-pinhality-dev-session-secret-nao-usar-em-producao}
+      - ORIGINAL_CACHE_MB=${ORIGINAL_CACHE_MB:-0}
+      - SYNC_CONCURRENCY=${SYNC_CONCURRENCY:-3}
       - API_TARGET=http://localhost:3000
       - CHOKIDAR_USEPOLLING=true
     volumes:
@@ -32,7 +34,7 @@ services:
       - /app/frontend/node_modules
       # JSON da base de dados e private/ (rclone.conf, permissões 600)
       - pinhality-dev-data:/data
-      # fotos_gdrive/<coleção>/...
+      # derivados/<coleção>/thumb|web/*.webp e manifest.json
       - pinhality-dev-fotos:/dados_privados
 
 volumes:
