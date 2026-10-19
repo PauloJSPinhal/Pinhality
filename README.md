@@ -14,15 +14,8 @@ frontend/                # React + Vite
 
 ## Desenvolvimento (PC local)
 
-Coloque a pasta `dados_privados` ao lado do repositório (`../dados_privados`):
-
-```
-dados_privados/
-├── .env                 # opcional: ADMIN_USER=... e ADMIN_PASS=...
-├── rclone.conf          # opcional (formato antigo); prefira o ecrã "Ligação ao Drive"
-└── fotos_gdrive/
-    └── <coleção>/imagem01.jpg ...
-```
+Funciona como a produção: não usa pastas fora do repositório. Só o código é montado (hot reload);
+dados e fotos ficam em volumes nomeados que começam vazios.
 
 ```bash
 docker compose -f docker-compose.dev.yml up --build
@@ -30,8 +23,16 @@ docker compose -f docker-compose.dev.yml up --build
 
 - Site com hot reload: http://localhost:5173 (o Vite encaminha `/api` e `/photos` para a API)
 - API: http://localhost:3000
-- Outra pasta de dados: `DADOS_PRIVADOS=./dados_privados docker compose -f docker-compose.dev.yml up`
-- Em desenvolvimento os JSON (`photos.json`, `collections.json`, ...) são os da pasta `backend/`.
+- Login por omissão: **admin / admin**. Para mudar, crie `./.env` no repositório (já está no `.gitignore`):
+  ```
+  ADMIN_USER=...
+  ADMIN_PASS=...
+  ```
+- As fotos chegam pela sincronização: **Gerir → 🔑 Ligação ao Drive** (token + pasta), depois **Sincronizar** com
+  "Todas as Coleções" e **Atualizar BD**.
+- O volume de dados começa vazio: galeria vazia, sem coleções, com as categorias por omissão.
+  (Em produção, um volume novo recebe os JSON do repositório como dados iniciais.)
+- Começar do zero (apaga dados, fotos e credenciais): `docker compose -f docker-compose.dev.yml down -v`
 
 ## Produção (Coolify)
 
@@ -76,7 +77,7 @@ o ecrã abre automaticamente para as introduzir.
 **Sincronizar** com uma coleção selecionada copia só essa pasta; com "Todas as Coleções" a pasta
 local passa a ser igual à pasta do Drive. Depois, a base de dados é atualizada (**Atualizar BD**).
 
-Prioridade da configuração: ecrã de administração → variáveis `GDRIVE_*` → `rclone.conf` antigo em `/dados_privados`.
+Prioridade da configuração: ecrã de administração → variáveis `GDRIVE_*` → `rclone.conf` antigo em `/dados_privados` (só produção antiga).
 
 ## Segurança
 

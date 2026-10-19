@@ -1,8 +1,11 @@
-# Desenvolvimento local: docker compose -f docker-compose.dev.yml up --build
-# - Um só contentor com Vite (http://localhost:5173, hot reload) e nodemon (API na porta 3000).
-# - O código é montado do disco: as alterações aparecem logo.
-# - Fotos e .env vêm da pasta dados_privados (por omissão ../dados_privados, ao lado do repositório).
-#   Para usar outra pasta: DADOS_PRIVADOS=./dados_privados docker compose -f docker-compose.dev.yml up
+# Desenvolvimento local, igual à produção mas com hot reload:
+#   docker compose -f docker-compose.dev.yml up --build
+# - Um só contentor com Vite (http://localhost:5173) e nodemon (API na porta 3000).
+# - Só o código é montado do disco. Dados e fotos ficam em volumes nomeados que começam vazios;
+#   as fotos chegam pela sincronização com o Google Drive (Gerir → Ligação ao Drive).
+# - Login por omissão: admin / admin. Para mudar, crie ./.env (já no .gitignore) com
+#   ADMIN_USER=... e ADMIN_PASS=... (o Docker Compose lê-o automaticamente).
+# - Apagar tudo (dados, fotos e credenciais): docker compose -f docker-compose.dev.yml down -v
 services:
   app:
     build:
@@ -12,15 +15,14 @@ services:
     ports:
       - "5173:5173"
       - "3000:3000"
-    env_file:
-      - path: ${DADOS_PRIVADOS:-../dados_privados}/.env
-        required: false
     environment:
       - NODE_ENV=development
       - PORT=3000
+      - DATA_DIR=/data
       - PHOTOS_DIR=/dados_privados/fotos_gdrive
-      # Credenciais do rclone e segredo da sessão fora do código montado
-      - PRIVATE_DIR=/private
+      - ADMIN_USER=${ADMIN_USER:-admin}
+      - ADMIN_PASS=${ADMIN_PASS:-admin}
+      - SESSION_SECRET=${SESSION_SECRET:-pinhality-dev-session-secret-nao-usar-em-producao}
       - API_TARGET=http://localhost:3000
       - CHOKIDAR_USEPOLLING=true
     volumes:
@@ -28,8 +30,11 @@ services:
       - ./frontend:/app/frontend
       - /app/backend/node_modules
       - /app/frontend/node_modules
-      - ${DADOS_PRIVADOS:-../dados_privados}:/dados_privados
-      - pinhality-dev-private:/private
+      # JSON da base de dados e private/ (rclone.conf, permissões 600)
+      - pinhality-dev-data:/data
+      # fotos_gdrive/<coleção>/...
+      - pinhality-dev-fotos:/dados_privados
 
 volumes:
-  pinhality-dev-private:
+  pinhality-dev-data:
+  pinhality-dev-fotos:

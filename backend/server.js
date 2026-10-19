@@ -16,7 +16,7 @@ const PHOTOS_DIR = path.resolve(process.env.PHOTOS_DIR || '/dados_privados/fotos
 
 // Pasta dos dados JSON. No Coolify é o volume /data; em desenvolvimento fica a pasta do backend.
 const DATA_DIR = path.resolve(process.env.DATA_DIR || __dirname);
-const SEED_DIR = path.join(__dirname, 'seed');
+const SEED_DIR = path.resolve(process.env.SEED_DIR || path.join(__dirname, 'seed'));
 const DATA_FILE = path.join(DATA_DIR, 'photos.json');
 const COLLECTIONS_FILE = path.join(DATA_DIR, 'collections.json');
 const CATEGORIES_FILE = path.join(DATA_DIR, 'categories.json');
