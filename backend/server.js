@@ -1,21 +1,36 @@
 // ========================================
 // backend/server.js - API + frontend num só contentor
 // ========================================
+// Paulo: resumo do que mudou desde a versão com dois contentores (nginx + backend):
+//  - Este servidor Express passou a servir tudo: a API (/api), as imagens (/photos) e o site compilado.
+//    Assim há um só contentor e o Coolify só precisa de apontar o domínio para a porta 3000.
+//  - O login passou a criar uma sessão a sério (token assinado num cookie). Antes, o "modo admin" era só
+//    uma variável no browser e qualquer pessoa podia chamar a API de escrita diretamente.
+//  - Todos os comandos externos (rclone, exiftool) correm com execFile/spawn, sem shell, para que nomes
+//    de pastas ou ficheiros nunca possam ser interpretados como comandos.
+//  - As credenciais do Google Drive são introduzidas no ecrã "Ligação ao Drive" e ficam guardadas só no servidor.
+//  - O servidor já não guarda os originais: gera miniaturas e versões web (ver media.js) e vai buscar o
+//    original ao Drive quando alguém o pede.
+// O resumo da revisão de segurança está em SEGURANCA.md.
 const express = require('express');
+const helmet = require('helmet');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+// Paulo: só execFile (sem shell). Antes usávamos exec com o comando montado numa string.
 const { execFile } = require('child_process');
 const { createMedia } = require('./media');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
-// Pasta das fotos (volume no Coolify, ../dados_privados em desenvolvimento)
+// Pasta das fotos no formato antigo (fotos_gdrive/<coleção>/<ficheiro>), dentro do volume /dados_privados
 const PHOTOS_DIR = path.resolve(process.env.PHOTOS_DIR || '/dados_privados/fotos_gdrive');
 
-// Pasta dos dados JSON. No Coolify é o volume /data; em desenvolvimento fica a pasta do backend.
+// Paulo: os JSON passaram para uma pasta configurável (no Coolify é o volume /data), porque dentro da
+// imagem perdiam-se a cada deploy. Num volume vazio, os JSON do repositório servem de dados iniciais.
 const DATA_DIR = path.resolve(process.env.DATA_DIR || __dirname);
 const SEED_DIR = path.resolve(process.env.SEED_DIR || path.join(__dirname, 'seed'));
 const DATA_FILE = path.join(DATA_DIR, 'photos.json');
@@ -23,12 +38,13 @@ const COLLECTIONS_FILE = path.join(DATA_DIR, 'collections.json');
 const CATEGORIES_FILE = path.join(DATA_DIR, 'categories.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
-// Ficheiros privados (credenciais do rclone e segredo das sessões), sempre com permissões 600
+// Paulo: ficheiros privados (credenciais do rclone e segredo das sessões) numa pasta só para eles,
+// sempre com permissões 600 (só o utilizador do contentor os lê).
 const PRIVATE_DIR = path.resolve(process.env.PRIVATE_DIR || path.join(DATA_DIR, 'private'));
 const RCLONE_CONF = path.join(PRIVATE_DIR, 'rclone.conf');
 const RCLONE_STATE = path.join(PRIVATE_DIR, 'rclone-state.json');
 const SESSION_SECRET_FILE = path.join(PRIVATE_DIR, 'session_secret');
-// Configuração antiga (ficheiro colocado à mão no volume das fotos)
+// Configuração antiga (o teu rclone.conf colocado à mão no volume das fotos) continua a funcionar
 const LEGACY_RCLONE_CONF = process.env.LEGACY_RCLONE_CONF || path.join(path.dirname(PHOTOS_DIR), 'rclone.conf');
 const REMOTE_NAME = 'gdrive';
 
@@ -39,6 +55,12 @@ const ORIGINAL_CACHE_MB = Math.max(0, Number(process.env.ORIGINAL_CACHE_MB || 0)
 const ORIGINALS_PUBLIC = !/^(0|false|no|nao|não)$/i.test(process.env.ORIGINALS_PUBLIC || 'true');
 const KEEP_LOCAL_ORIGINALS = /^(1|true|yes|sim)$/i.test(process.env.KEEP_LOCAL_ORIGINALS || 'false');
 const SYNC_CONCURRENCY = Math.min(8, Math.max(1, Number(process.env.SYNC_CONCURRENCY || 3) || 3));
+// Paulo: as coordenadas GPS do EXIF podem revelar onde vives ou de onde fotografas. Por omissão
+// deixam de ser mostradas aos visitantes (na API e nos originais). Tu, com sessão iniciada, continuas a vê-las.
+const SHOW_GPS = /^(1|true|yes|sim)$/i.test(process.env.SHOW_GPS || 'false');
+// Paulo: limite de originais a ser transferidos do Drive ao mesmo tempo, para que ninguém consiga
+// esgotar a ligação ou a quota do Drive a pedir originais em massa.
+const MAX_ORIGINAL_STREAMS = Math.max(1, Number(process.env.MAX_ORIGINAL_STREAMS || 4) || 4);
 
 const media = createMedia({
   photosDir: PHOTOS_DIR,
@@ -50,6 +72,7 @@ const media = createMedia({
   thumbSize: Number(process.env.THUMB_SIZE || 400) || 400,
   webSize: Number(process.env.WEB_SIZE || 1600) || 1600,
   keepLocalOriginals: KEEP_LOCAL_ORIGINALS,
+  maxOriginalStreams: MAX_ORIGINAL_STREAMS,
   getRcloneSource: (...a) => getRcloneSource(...a),
   runRclone: (...a) => runRclone(...a),
   rcloneEnvArgs: (...a) => rcloneEnvArgs(...a),
@@ -62,13 +85,78 @@ const media = createMedia({
 const FRONTEND_DIR = path.resolve(process.env.FRONTEND_DIR || path.join(__dirname, 'public'));
 
 const COOKIE_NAME = 'pinhality_session';
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const COOKIE_SECURE = (process.env.COOKIE_SECURE || 'auto').toLowerCase();
+const SESSION_TTL_MS = Math.max(1, Number(process.env.SESSION_TTL_HOURS || 168) || 168) * 60 * 60 * 1000;
 
-// Middleware
-app.set('trust proxy', true); // atrás do proxy do Coolify (HTTPS)
+// ========================================
+// SEGURANÇA DOS PEDIDOS
+// ========================================
+
+// Paulo: antes estava "trust proxy = true", o que fazia o Express acreditar no cabeçalho X-Forwarded-For
+// de qualquer pessoa. Assim, um atacante podia fingir outro IP e fugir ao limite de tentativas de login.
+// Agora só se confia em proxies de redes privadas (o Traefik do Coolify está na rede interna do Docker).
+app.set('trust proxy', process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal');
 app.disable('x-powered-by');
-app.use(express.json({ limit: '50mb' }));
-// Miniaturas (~400px) e versões web (~1600px) em WebP
+
+// Paulo: cabeçalhos de segurança (helmet). O mais importante é a Content-Security-Policy: o browser só
+// executa scripts e estilos servidos por este site. Isto só foi possível porque o Tailwind deixou de vir
+// da CDN (agora é compilado no build), por isso o site já não depende de nenhum servidor de terceiros
+// e os visitantes não são seguidos por eles.
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: false,
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'"],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      fontSrc: ["'self'"],
+      connectSrc: ["'self'"],
+      mediaSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"],
+      manifestSrc: ["'self'"],
+      workerSrc: ["'self'"]
+    }
+  },
+  // HSTS é enviado abaixo só quando o pedido chegou por HTTPS (no Coolify), para não estragar o
+  // desenvolvimento em http://localhost.
+  strictTransportSecurity: false,
+  referrerPolicy: { policy: 'same-origin' },
+  crossOriginResourcePolicy: { policy: 'same-origin' },
+  crossOriginOpenerPolicy: { policy: 'same-origin' },
+  xFrameOptions: { action: 'deny' }
+}));
+app.use((req, res, next) => {
+  if (req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  // Paulo: o browser deixa de oferecer câmara, microfone e localização a este site (não precisa deles).
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  next();
+});
+
+// Paulo: antes o limite do corpo dos pedidos era 50 MB. A app não recebe ficheiros pelo browser
+// (as fotos chegam do Drive), por isso 1 MB chega e evita que alguém encha a memória do servidor.
+app.use(express.json({ limit: '1mb' }));
+
+// Paulo: proteção extra contra CSRF (um site malicioso a fazer pedidos em teu nome enquanto tens a sessão aberta).
+// O cookie já é SameSite=Strict, mas aqui recusamos também qualquer pedido de escrita que o browser
+// marque como vindo de outro site.
+app.use('/api', (req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  const site = req.headers['sec-fetch-site'];
+  if (site && site !== 'same-origin' && site !== 'none') {
+    return res.status(403).json({ error: 'Pedido recusado (origem diferente).', code: 'CROSS_SITE' });
+  }
+  next();
+});
+
+// ========================================
+// IMAGENS
+// ========================================
+
+// Miniaturas (~400px) e versões web (~1600px) em WebP, só para fotos conhecidas no manifesto
 for (const kind of ['thumb', 'web']) {
   app.get(`/photos/${kind}/:col/:file`, (req, res) => {
     const file = media.derivedFile(kind, req.params.col, req.params.file);
@@ -80,12 +168,20 @@ for (const kind of ['thumb', 'web']) {
 app.get('/photos/original/:col/:file', (req, res, next) => {
   if (!ORIGINALS_PUBLIC) return requireAdmin(req, res, next);
   next();
-}, (req, res) => media.serveOriginal(req, res, req.params.col, req.params.file).catch((error) => {
-  console.error('Erro ao servir original:', error.message);
-  if (!res.headersSent) res.status(500).json({ error: 'Erro ao obter o original' });
-}));
-// Formato antigo: originais guardados em fotos_gdrive/<coleção>/<ficheiro>
-app.use('/photos', express.static(PHOTOS_DIR));
+}, (req, res) => {
+  // Paulo: visitantes recebem o original sem as coordenadas GPS (a não ser que SHOW_GPS=true)
+  const stripGps = !SHOW_GPS && !getSession(req);
+  media.serveOriginal(req, res, req.params.col, req.params.file, { stripGps }).catch((error) => {
+    console.error('Erro ao servir original:', error.message);
+    if (!res.headersSent) res.status(500).json({ error: 'Erro ao obter o original' });
+  });
+});
+// Paulo: a pasta antiga das fotos só serve imagens. Antes servia qualquer ficheiro que lá estivesse
+// (por exemplo um .html vindo do Drive, que correria como se fosse deste site).
+app.use('/photos', (req, res, next) => {
+  if (!media.IMAGE_RE.test(req.path)) return res.status(404).end();
+  next();
+}, express.static(PHOTOS_DIR, { dotfiles: 'ignore', index: false, redirect: false }));
 // Fotos já convertidas: o caminho antigo devolve a versão web
 app.get('/photos/:col/:file', (req, res) => {
   const file = media.derivedFile('web', req.params.col, `${req.params.file}.webp`);
@@ -96,6 +192,10 @@ app.get('/photos/:col/:file', (req, res) => {
 // ========================================
 // AUTENTICAÇÃO - token assinado (HMAC) em cookie httpOnly ou "Authorization: Bearer"
 // ========================================
+// Paulo: antes, o login só respondia "ok" e o browser passava a mostrar os botões de admin; a API em si
+// não verificava nada. Agora o login devolve um token assinado com um segredo que só o servidor conhece,
+// guardado num cookie httpOnly (o JavaScript da página não o consegue ler) e SameSite=Strict
+// (o browser não o envia em pedidos vindos de outros sites). Todas as rotas de escrita exigem este token.
 let sessionSecret = null;
 
 async function loadSessionSecret() {
@@ -105,6 +205,8 @@ async function loadSessionSecret() {
     return;
   }
   if (fromEnv) console.warn('⚠️ SESSION_SECRET tem menos de 16 caracteres; a usar um segredo gerado.');
+  // Paulo: sem SESSION_SECRET, gera-se um segredo aleatório e guarda-se no volume, para que as sessões
+  // sobrevivam a um restart.
   await fs.mkdir(PRIVATE_DIR, { recursive: true, mode: 0o700 });
   try {
     sessionSecret = (await fs.readFile(SESSION_SECRET_FILE, 'utf8')).trim();
@@ -116,25 +218,42 @@ async function loadSessionSecret() {
   }
 }
 
+// Paulo: a chave de assinatura também depende do utilizador e da palavra-passe de admin. Se mudares a
+// palavra-passe no Coolify, todas as sessões antigas deixam de valer automaticamente.
+function signingKey() {
+  return crypto.createHmac('sha256', sessionSecret)
+    .update(`${process.env.ADMIN_USER || ''}\u0000${process.env.ADMIN_PASS || ''}`)
+    .digest();
+}
+
 function sign(data) {
-  return crypto.createHmac('sha256', sessionSecret).update(data).digest('base64url');
+  return crypto.createHmac('sha256', signingKey()).update(data).digest('base64url');
 }
 
 function createToken(username) {
-  const payload = Buffer.from(JSON.stringify({ u: username, exp: Date.now() + SESSION_TTL_MS })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({
+    u: username,
+    exp: Date.now() + SESSION_TTL_MS,
+    jti: crypto.randomBytes(12).toString('base64url')
+  })).toString('base64url');
   return `${payload}.${sign(payload)}`;
 }
 
+// Paulo: tokens de sessões terminadas com "Logout" ficam recusados até expirarem
+const revokedTokens = new Map(); // jti -> exp
+
 function verifyToken(token) {
-  if (typeof token !== 'string' || !token) return null;
+  if (typeof token !== 'string' || !token || token.length > 1000) return null;
   const [payload, sig] = token.split('.');
   if (!payload || !sig) return null;
   const a = Buffer.from(sig);
   const b = Buffer.from(sign(payload));
+  // Paulo: comparação em tempo constante, para não dar pistas sobre a assinatura correta
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   try {
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     if (!data.exp || data.exp < Date.now()) return null;
+    if (data.jti && revokedTokens.has(data.jti)) return null;
     return data;
   } catch {
     return null;
@@ -167,13 +286,29 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// Paulo: comparação de utilizador/palavra-passe em tempo constante (o "===" responde mais depressa quando
+// as primeiras letras estão erradas, o que em teoria permite adivinhar a palavra-passe aos poucos)
 function safeEqual(a, b) {
   const ha = crypto.createHash('sha256').update(String(a)).digest();
   const hb = crypto.createHash('sha256').update(String(b)).digest();
   return crypto.timingSafeEqual(ha, hb);
 }
 
-// Limite simples de tentativas de login falhadas por IP
+// Paulo: em produção recusamos palavras-passe óbvias (por exemplo o admin/admin do ambiente de
+// desenvolvimento), para que nunca fiquem ativas no site público por engano.
+const WEAK_PASSWORDS = new Set(['admin', 'password', 'teste', 'test', '1234', '12345', '123456', '12345678', 'changeme', 'pinhality']);
+function adminLoginProblem() {
+  const user = process.env.ADMIN_USER;
+  const pass = process.env.ADMIN_PASS;
+  if (!user || !pass) return 'ADMIN_USER e ADMIN_PASS não estão definidos no servidor.';
+  if (IS_PRODUCTION && (pass.length < 8 || WEAK_PASSWORDS.has(pass.toLowerCase()) || pass === user)) {
+    return 'A palavra-passe de administração é demasiado fraca para produção (mínimo 8 caracteres, não óbvia). Altere ADMIN_PASS no Coolify.';
+  }
+  return null;
+}
+
+// Paulo: limite de tentativas de login falhadas por IP (10 em 15 minutos), para travar quem tente
+// adivinhar a palavra-passe por força bruta.
 const loginFailures = new Map();
 function tooManyAttempts(ip) {
   const entry = loginFailures.get(ip);
@@ -188,6 +323,75 @@ function registerFailure(ip) {
   const entry = loginFailures.get(ip);
   if (!entry || Date.now() - entry.first > 15 * 60 * 1000) loginFailures.set(ip, { count: 1, first: Date.now() });
   else entry.count++;
+}
+// Limpeza periódica (evita que estes mapas cresçam sem fim)
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, e] of loginFailures) if (now - e.first > 15 * 60 * 1000) loginFailures.delete(ip);
+  for (const [jti, exp] of revokedTokens) if (exp < now) revokedTokens.delete(jti);
+}, 10 * 60 * 1000).unref();
+
+// ========================================
+// VALIDAÇÃO DOS DADOS RECEBIDOS
+// ========================================
+// Paulo: antes, POST /api/photos gravava no photos.json tudo o que viesse no pedido. Agora só aceitamos
+// os campos que a app usa, com tamanhos máximos, e o imageUrl tem de ser photos/<coleção>/<ficheiro de imagem>.
+const PHOTO_TEXT_FIELDS = {
+  title: 300, location: 300, description: 5000, date: 10, time: 8,
+  aperture: 20, iso: 20, shutterSpeed: 20, focalLength: 20, camera: 200, lens: 200,
+  exposureMode: 100, meteringMode: 100, exposureCompensation: 30, whiteBalance: 100, focusMode: 100,
+  copyright: 300, gpsLatitude: 100, gpsLongitude: 100
+};
+const GPS_FIELDS = ['gpsLatitude', 'gpsLongitude'];
+
+function cleanText(value, max) {
+  if (value === undefined || value === null) return '';
+  return String(value).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').slice(0, max);
+}
+
+function validatePhotoInput(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'Dados inválidos' };
+  const photo = {};
+  for (const [field, max] of Object.entries(PHOTO_TEXT_FIELDS)) {
+    if (body[field] !== undefined) photo[field] = cleanText(body[field], max);
+  }
+  if (!photo.title || !photo.title.trim()) return { error: 'O título é obrigatório' };
+  const url = String(body.imageUrl || '');
+  const parts = url.split('/');
+  if (!(parts.length === 3 && parts[0] === 'photos' && isValidCollectionName(parts[1]) && isValidCollectionName(parts[2]) && media.IMAGE_RE.test(parts[2])) &&
+      !(parts.length === 2 && parts[0] === 'photos' && isValidCollectionName(parts[1]) && media.IMAGE_RE.test(parts[1]))) {
+    return { error: 'Caminho da imagem inválido (photos/<coleção>/<ficheiro>)' };
+  }
+  photo.imageUrl = url;
+  if (body.collection === null || body.collection === undefined || body.collection === '') photo.collection = null;
+  else if (isValidCollectionName(String(body.collection))) photo.collection = String(body.collection);
+  else return { error: 'Coleção inválida' };
+  if (body.categories !== undefined) {
+    if (!Array.isArray(body.categories)) return { error: 'Categorias inválidas' };
+    photo.categories = body.categories.filter(c => typeof c === 'string').map(c => cleanText(c, 100)).slice(0, 50);
+  }
+  if (body.isFavorite !== undefined) photo.isFavorite = !!body.isFavorite;
+  if (body.timestamp !== undefined) photo.timestamp = Number(body.timestamp) || Date.now();
+  if (body.id !== undefined) {
+    if (!(typeof body.id === 'number' && Number.isFinite(body.id)) && !(typeof body.id === 'string' && /^[0-9.]{1,40}$/.test(body.id))) {
+      return { error: 'ID inválido' };
+    }
+    photo.id = body.id;
+  }
+  return { photo };
+}
+
+// Nomes de categorias: texto simples, sem caracteres de controlo, até 100 caracteres
+function validCategoryName(name) {
+  return typeof name === 'string' && name.trim().length > 0 && name.length <= 100 && !/[\u0000-\u001f\u007f]/.test(name);
+}
+
+// Paulo: os visitantes não recebem as coordenadas GPS (ver SHOW_GPS acima)
+function publicView(req, obj) {
+  if (SHOW_GPS || getSession(req)) return obj;
+  const copy = { ...obj };
+  for (const f of GPS_FIELDS) delete copy[f];
+  return copy;
 }
 
 // ========================================
@@ -256,7 +460,11 @@ app.get('/api/settings', async (req, res) => {
 
 app.put('/api/settings/active-collection', requireAdmin, async (req, res) => {
   try {
-    const { collectionId } = req.body;
+    const { collectionId } = req.body || {};
+    // Paulo: só aceita uma coleção válida (ou nenhuma)
+    if (collectionId !== null && collectionId !== undefined && !isValidCollectionName(collectionId)) {
+      return res.status(400).json({ error: 'Coleção inválida' });
+    }
     const settings = {
       activeCollection: collectionId,
       lastUpdated: new Date()
@@ -274,6 +482,8 @@ app.put('/api/settings/active-collection', requireAdmin, async (req, res) => {
 // ROTA - SYNC completo (pastas + fotos)
 // ========================================
 
+// Paulo: o "Atualizar BD" passou a considerar também as fotos convertidas (que já não têm o original no
+// disco), senão apagava-as todas da base de dados.
 // Imagens disponíveis = originais locais (formato antigo) + fotos convertidas (manifesto dos derivados)
 async function listAvailableImages() {
   const images = new Map(); // imageUrl -> { col, file, exif }
@@ -397,7 +607,9 @@ async function rebuildDatabase() {
   };
 }
 
-app.get('/api/sync', requireAdmin, async (req, res) => {
+// Paulo: "Atualizar BD" passou de GET para POST. Um GET que altera dados pode ser disparado só por abrir
+// um link ou uma imagem; os pedidos de escrita devem ser sempre POST/PUT/DELETE.
+app.post('/api/sync', requireAdmin, async (req, res) => {
   try {
     res.json(await rebuildDatabase());
   } catch (error) {
@@ -410,7 +622,7 @@ app.get('/api/sync', requireAdmin, async (req, res) => {
 // ROTA - SCAN de pastas
 // ========================================
 
-app.get('/api/collections/scan', requireAdmin, async (req, res) => {
+app.post('/api/collections/scan', requireAdmin, async (req, res) => {
   try {
     const photosDir = PHOTOS_DIR;
     
@@ -495,10 +707,14 @@ app.get('/api/collections', async (req, res) => {
 
 app.post('/api/collections', requireAdmin, async (req, res) => {
   try {
-    const { name, description, setAsActive } = req.body;
+    const { name, description, setAsActive } = req.body || {};
     
-    if (!name || name.trim() === '') {
-      return res.status(400).json({ error: 'Nome da coleção é obrigatório' });
+    // Paulo: tipos e tamanhos verificados (antes um nome que não fosse texto rebentava o servidor)
+    if (typeof name !== 'string' || name.trim() === '' || name.length > 200) {
+      return res.status(400).json({ error: 'Nome da coleção é obrigatório (máx. 200 caracteres)' });
+    }
+    if (description !== undefined && (typeof description !== 'string' || description.length > 2000)) {
+      return res.status(400).json({ error: 'Descrição inválida' });
     }
     
     const data = await fs.readFile(COLLECTIONS_FILE, 'utf8');
@@ -543,7 +759,11 @@ app.post('/api/collections', requireAdmin, async (req, res) => {
 app.put('/api/collections/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description } = req.body;
+    const { name, description } = req.body || {};
+    if ((name !== undefined && (typeof name !== 'string' || name.length > 200)) ||
+        (description !== undefined && (typeof description !== 'string' || description.length > 2000))) {
+      return res.status(400).json({ error: 'Dados inválidos' });
+    }
     
     const data = await fs.readFile(COLLECTIONS_FILE, 'utf8');
     let collections = JSON.parse(data);
@@ -622,10 +842,10 @@ app.get('/api/categories', async (req, res) => {
 
 app.post('/api/categories', requireAdmin, async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name } = req.body || {};
     
-    if (!name || name.trim() === '') {
-      return res.status(400).json({ error: 'Nome da categoria é obrigatório' });
+    if (!validCategoryName(name)) {
+      return res.status(400).json({ error: 'Nome da categoria é obrigatório (máx. 100 caracteres)' });
     }
     
     const data = await fs.readFile(CATEGORIES_FILE, 'utf8');
@@ -649,10 +869,10 @@ app.post('/api/categories', requireAdmin, async (req, res) => {
 app.put('/api/categories/:oldName', requireAdmin, async (req, res) => {
   try {
     const { oldName } = req.params;
-    const { newName } = req.body;
+    const { newName } = req.body || {};
     
-    if (!newName || newName.trim() === '') {
-      return res.status(400).json({ error: 'Novo nome é obrigatório' });
+    if (!validCategoryName(newName)) {
+      return res.status(400).json({ error: 'Novo nome é obrigatório (máx. 100 caracteres)' });
     }
     
     const data = await fs.readFile(CATEGORIES_FILE, 'utf8');
@@ -742,7 +962,7 @@ app.get('/api/photos', async (req, res) => {
         }
       }
       // URLs da miniatura, da versão web e do original (calculados, não guardados)
-      return { ...photo, ...media.urlsFor(photo.imageUrl) };
+      return publicView(req, { ...photo, ...media.urlsFor(photo.imageUrl) });
     });
     
     res.json(photos);
@@ -757,15 +977,17 @@ app.post('/api/photos', requireAdmin, async (req, res) => {
     const data = await fs.readFile(DATA_FILE, 'utf8');
     let photos = JSON.parse(data);
     
-    const existing = req.body.id !== undefined ? photos.find(p => p.id === req.body.id) : null;
-    const { thumbUrl, webUrl, originalUrl, mediaVersion, width, height, originalSize, ...body } = req.body;
+    // Paulo: validação dos campos (ver validatePhotoInput); campos desconhecidos são ignorados
+    const { photo: body, error } = validatePhotoInput(req.body);
+    if (error) return res.status(400).json({ error });
+    const existing = body.id !== undefined ? photos.find(p => p.id === body.id) : null;
     const newPhoto = {
       ...(existing || {}),
       ...body,
-      id: req.body.id || Date.now()
+      id: body.id || Date.now()
     };
     
-    if (req.body.id !== undefined) {
+    if (body.id !== undefined) {
       photos = photos.filter(p => p.id !== newPhoto.id);
     }
     
@@ -773,7 +995,7 @@ app.post('/api/photos', requireAdmin, async (req, res) => {
     await fs.writeFile(DATA_FILE, JSON.stringify(photos, null, 2));
     
     console.log(`✅ Foto guardada: ${newPhoto.title} [${newPhoto.collection || 'Sem coleção'}]`);
-    res.json({ ...newPhoto, ...media.urlsFor(newPhoto.imageUrl) });
+    res.json(publicView(req, { ...newPhoto, ...media.urlsFor(newPhoto.imageUrl) }));
   } catch (error) {
     console.error('Erro ao guardar foto:', error);
     res.status(500).json({ error: 'Erro ao guardar foto' });
@@ -807,21 +1029,24 @@ app.get('/api/exif', async (req, res) => {
   if (!imagePath) return res.status(400).json({ error: 'imagePath é obrigatório' });
   
   const cleanImagePath = String(imagePath).trim();
+  if (cleanImagePath.length > 600) return res.status(400).json({ error: 'Caminho inválido' });
   if (!cleanImagePath.startsWith('photos/') || !media.IMAGE_RE.test(cleanImagePath)) {
     return res.status(400).json({ error: 'Caminho inválido' });
   }
 
   // 1. EXIF guardado na sincronização (o original fica no Drive)
   const entry = media.entryFor(cleanImagePath);
-  if (entry) return res.json(entry.exif || {});
+  if (entry) return res.json(publicView(req, entry.exif || {}));
 
   // 2. Formato antigo: original no disco. O caminho tem de ficar dentro da pasta das fotos.
+  // Paulo: antes o caminho ia para dentro de um comando exec entre aspas; um nome com aspas ou ";"
+  // executava comandos, e "../" permitia ler ficheiros fora da pasta das fotos.
   const fullPath = path.resolve(PHOTOS_DIR, cleanImagePath.replace(/^photos\//, ''));
   if (!fullPath.startsWith(PHOTOS_DIR + path.sep)) {
     return res.status(400).json({ error: 'Caminho inválido' });
   }
   if (!fsSync.existsSync(fullPath)) return res.json({});
-  res.json(await media.readExif(fullPath));
+  res.json(publicView(req, await media.readExif(fullPath)));
 });
 
 // ========================================
@@ -837,8 +1062,9 @@ app.post('/api/login', (req, res) => {
   const ADMIN_USER = process.env.ADMIN_USER;
   const ADMIN_PASS = process.env.ADMIN_PASS;
 
-  if (!ADMIN_USER || !ADMIN_PASS) {
-    return res.status(503).json({ success: false, message: 'ADMIN_USER e ADMIN_PASS não estão definidos no servidor.' });
+  const problem = adminLoginProblem();
+  if (problem) {
+    return res.status(503).json({ success: false, message: problem });
   }
 
   if (typeof username === 'string' && typeof password === 'string' &&
@@ -848,7 +1074,9 @@ app.post('/api/login', (req, res) => {
     res.cookie(COOKIE_NAME, token, {
       httpOnly: true,
       sameSite: 'strict',
-      secure: req.secure,
+      // Paulo: Secure = o cookie só viaja por HTTPS. Atrás do Coolify o pedido chega ao contentor em HTTP,
+      // mas o Traefik indica X-Forwarded-Proto=https e o "trust proxy" faz o req.secure ficar verdadeiro.
+      secure: COOKIE_SECURE === 'auto' ? req.secure : COOKIE_SECURE === 'true',
       maxAge: SESSION_TTL_MS,
       path: '/'
     });
@@ -865,15 +1093,23 @@ app.get('/api/session', (req, res) => {
 });
 
 app.post('/api/logout', (req, res) => {
-  res.clearCookie(COOKIE_NAME, { path: '/' });
+  // Paulo: além de apagar o cookie, o token fica recusado no servidor até expirar
+  const session = getSession(req);
+  if (session && session.jti) revokedTokens.set(session.jti, session.exp);
+  res.clearCookie(COOKIE_NAME, { path: '/', httpOnly: true, sameSite: 'strict' });
   res.json({ success: true });
 });
 
 // ========================================
 // RCLONE (Google Drive) - credenciais geridas na área de administração
 // ========================================
+// Paulo: antes o rclone.conf tinha de ser copiado à mão para o servidor. Agora introduzes o token e a
+// pasta no ecrã "Ligação ao Drive" (só com sessão iniciada). O servidor grava o rclone.conf com
+// permissões 600 e nunca devolve os segredos ao browser (só diz se existem).
+// Recomendação: usa o âmbito só de leitura (drive.readonly); o site nunca precisa de escrever no Drive.
 
 // Nome de coleção = nome de uma pasta. Sem barras, sem "..", sem caracteres de controlo.
+// Paulo: também não pode começar por "-", para nunca ser lido como uma opção do rclone ou do exiftool.
 function isValidCollectionName(name) {
   return typeof name === 'string' && name.length > 0 && name.length <= 200 &&
     name.trim() === name && name !== '.' && name !== '..' &&
@@ -881,6 +1117,7 @@ function isValidCollectionName(name) {
 }
 
 // Valores que vão para o rclone.conf: uma linha, sem caracteres de controlo
+// Paulo: sem isto, uma quebra de linha num campo permitiria acrescentar opções ao rclone.conf.
 function cleanIniValue(value) {
   if (value === undefined || value === null) return '';
   const v = String(value).trim();
@@ -1114,6 +1351,9 @@ app.post('/api/admin/rclone/test', requireAdmin, async (req, res) => {
 // ========================================
 // ROTA - SINCRONIZAR COM GOOGLE DRIVE (rclone)
 // ========================================
+// Paulo: antes esta rota corria `rclone sync "gdrive:fotos-site/${nome}" ...` com exec, e o nome vinha
+// do pedido sem validação: dava para injetar comandos no servidor. Agora o nome é validado e todo o
+// trabalho é feito em media.js com execFile/spawn (sem shell).
 // A sincronização corre em segundo plano; o estado vê-se em GET /api/sync-drive/status.
 // Com ?wait=1 a resposta só chega no fim (útil para scripts e testes).
 async function syncDrive(req, res, collectionName) {
@@ -1149,6 +1389,8 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 // ========================================
 // FRONTEND (build do Vite) + fallback da SPA
 // ========================================
+// Paulo: o nginx saiu. O próprio Express serve o site compilado e devolve o index.html para qualquer
+// caminho que não seja /api ou /photos (assim um refresh numa página interna continua a funcionar).
 const INDEX_HTML = path.join(FRONTEND_DIR, 'index.html');
 app.use('/api', (req, res) => res.status(404).json({ error: 'Rota não encontrada' }));
 if (fsSync.existsSync(INDEX_HTML)) {
@@ -1166,14 +1408,23 @@ if (fsSync.existsSync(INDEX_HTML)) {
   console.log(`ℹ️ Sem frontend compilado em ${FRONTEND_DIR} (normal em desenvolvimento: usar o Vite na porta 5173)`);
 }
 
+// Paulo: erros inesperados (por exemplo JSON mal formado) respondem com uma mensagem genérica.
+// Antes o Express podia devolver a pilha do erro com caminhos internos do servidor.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  const status = err.status || err.statusCode || 500;
+  if (status >= 500) console.error('💥 Erro:', err.message);
+  if (res.headersSent) return;
+  res.status(status).json({ error: status === 413 ? 'Pedido demasiado grande' : status < 500 ? 'Pedido inválido' : 'Erro interno' });
+});
+
 // ========================================
 // INICIA O SERVIDOR
 // ========================================
 Promise.all([initDataFiles(), loadSessionSecret(), media.init()]).then(() => {
   if (!media.sharpAvailable()) console.warn('⚠️ sharp não carregou: a sincronização não consegue gerar miniaturas.');
-  if (!process.env.ADMIN_USER || !process.env.ADMIN_PASS) {
-    console.warn('⚠️ ADMIN_USER/ADMIN_PASS não definidos: o login de administrador está desativado.');
-  }
+  const loginProblem = adminLoginProblem();
+  if (loginProblem) console.warn(`⚠️ Login de administrador desativado: ${loginProblem}`);
   app.listen(PORT, () => {
     console.log(`🚀 Servidor a correr em http://localhost:${PORT}`);
     console.log(`📸 Fotos em ${PHOTOS_DIR} | 💾 Dados em ${DATA_DIR}`);

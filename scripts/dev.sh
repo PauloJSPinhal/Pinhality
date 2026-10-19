@@ -4,7 +4,8 @@
 set -e
 
 cd /app/backend
-npx nodemon --legacy-watch --ignore '*.json' --ignore 'private/*' server.js &
+# Paulo: o nodemon saiu (trazia dependências com vulnerabilidades); o Node 22 já recarrega sozinho com --watch
+node --watch server.js &
 BACKEND_PID=$!
 
 cd /app/frontend

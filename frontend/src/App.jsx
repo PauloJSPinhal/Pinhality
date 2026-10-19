@@ -39,7 +39,8 @@ export default function App() {
 
   useEffect(() => {
     loadInitialData()
-    // Repor a sessão de administrador (cookie httpOnly) depois de recarregar a página
+    // Paulo: a sessão de admin agora existe no servidor (cookie httpOnly). Ao recarregar a página
+    // perguntamos ao servidor se a sessão ainda é válida, em vez de confiar numa variável do browser.
     fetch('/api/session')
       .then(res => res.json())
       .then(data => setAuthenticated(!!data.authenticated))
@@ -278,7 +279,7 @@ const handleOpenFullscreen = (photo) => {
     setShowManageMenu(false)
     if (window.confirm('🔄 Sincronizar pastas e fotos?\n\n• Cria coleções para pastas novas\n• Remove coleções de pastas eliminadas\n• Adiciona fotos novas automaticamente\n• Remove fotos de ficheiros eliminados')) {
       try {
-        const res = await apiFetch('/api/sync')
+        const res = await apiFetch('/api/sync', { method: 'POST' })
         if (!res.ok) return
         const data = await res.json()
         
@@ -318,6 +319,8 @@ const handleOpenFullscreen = (photo) => {
     }
   }
 
+  // Paulo: a sincronização com o Drive corre em segundo plano no servidor (gera miniaturas e versões web);
+  // aqui só a iniciamos e vamos perguntando o progresso. Se faltarem credenciais, abre o ecrã "Ligação ao Drive".
   const handleSyncDrive = async () => {
     setShowManageMenu(false)
 

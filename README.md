@@ -7,7 +7,9 @@ o Express serve a API (`/api`), as fotos (`/photos`) e o site compilado, tudo na
 Dockerfile               # multi-stage: dev | frontend-build | production
 docker-compose.yml       # produção (Coolify)
 docker-compose.dev.yml   # desenvolvimento no PC local
-scripts/dev.sh           # arranca nodemon + Vite no contentor de desenvolvimento
+scripts/dev.sh           # arranca node --watch + Vite no contentor de desenvolvimento
+scripts/entrypoint.sh    # produção: corrige o dono dos volumes e arranca como utilizador node
+SEGURANCA.md             # revisão de segurança (problemas encontrados e correções)
 backend/server.js        # API
 frontend/                # React + Vite
 ```
@@ -23,7 +25,7 @@ docker compose -f docker-compose.dev.yml up --build
 
 - Site com hot reload: http://localhost:5173 (o Vite encaminha `/api` e `/photos` para a API)
 - API: http://localhost:3000
-- Login por omissão: **admin / admin**. Para mudar, crie `./.env` no repositório (já está no `.gitignore`):
+- Login por omissão: **admin / admin** (só em desenvolvimento; em produção palavras-passe fracas são recusadas). Para mudar, crie `./.env` no repositório (já está no `.gitignore`):
   ```
   ADMIN_USER=...
   ADMIN_PASS=...
@@ -45,7 +47,7 @@ docker compose -f docker-compose.dev.yml up --build
 | Variável | Obrigatória | Descrição |
 |---|---|---|
 | `ADMIN_USER` | sim | utilizador de administração |
-| `ADMIN_PASS` | sim | palavra-passe de administração |
+| `ADMIN_PASS` | sim | palavra-passe de administração (mínimo 8 caracteres; `admin`, `password`, igual ao utilizador, etc. são recusadas em produção) |
 | `SESSION_SECRET` | não | segredo das sessões (mín. 16 caracteres). Se vazio, é gerado e guardado em `/data/private` |
 | `GDRIVE_TOKEN` | não | alternativa ao ecrã de credenciais: JSON do token do rclone numa só linha |
 | `GDRIVE_ROOT_FOLDER_ID` | não | ID da pasta das fotos (com `GDRIVE_TOKEN`) |
@@ -54,8 +56,17 @@ docker compose -f docker-compose.dev.yml up --build
 | `ORIGINAL_CACHE_MB` | não | cache em disco dos originais pedidos ao Drive, em MB (por omissão `0` = sem cache) |
 | `ORIGINALS_PUBLIC` | não | `true` (por omissão): qualquer visitante pode abrir o original; `false`: só o administrador |
 | `SYNC_CONCURRENCY` | não | imagens processadas em paralelo na sincronização (por omissão `3`) |
+| `SHOW_GPS` | não | `false` (por omissão): as coordenadas GPS só aparecem ao administrador e são retiradas dos originais servidos ao público; `true`: públicas |
+| `MAX_ORIGINAL_STREAMS` | não | originais servidos em simultâneo (por omissão `4`); acima disso responde 503 |
+| `SESSION_TTL_HOURS` | não | duração da sessão de administração em horas (por omissão `168` = 7 dias) |
+| `COOKIE_SECURE` | não | `auto` (por omissão: `Secure` quando o pedido chega por HTTPS através do proxy), `true` ou `false` |
+| `TRUST_PROXY` | não | proxies em que o Express confia para `X-Forwarded-*` (por omissão `loopback, linklocal, uniquelocal`, que serve o Traefik do Coolify) |
 
 4. **Redeploy** (um restart não aplica variáveis novas). O ficheiro `.env` não é lido pelo Coolify.
+
+O contentor corre como utilizador `node` (não root). Ao arrancar, o `entrypoint` corrige o dono dos volumes
+(volumes antigos criados como root são migrados automaticamente). O compose retira todas as *capabilities* exceto as
+necessárias para isso (`CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `SETUID`, `SETGID`) e ativa `no-new-privileges`.
 
 Volumes persistentes:
 - `pinhality-data` → `/data`: JSON da base de dados e `private/` (credenciais do rclone e segredo da sessão, permissões 600)
@@ -67,7 +78,8 @@ Depois de iniciar sessão: **Gerir → 🔑 Ligação ao Drive**. O ecrã mostra
 (configurado / não configurado, origem e resultado do último teste) e permite:
 
 - **Token OAuth (JSON)**: num computador com o [rclone](https://rclone.org/install/), corra
-  `rclone authorize "drive"`, inicie sessão com a conta Google (uma conta normal serve) e cole o JSON
+  `rclone authorize "drive" "eyJzY29wZSI6ImRyaXZlLnJlYWRvbmx5In0"` (pede acesso **só de leitura**, `drive.readonly`),
+  inicie sessão com a conta Google (uma conta normal serve) e cole o JSON
   `{"access_token": ...}` que aparece no terminal.
 - **ID ou URL da pasta**: abra a pasta das fotos no Google Drive e copie o URL
   (`https://drive.google.com/drive/folders/1AbC...xyz`) ou só a parte final (`1AbC...xyz`).
@@ -111,6 +123,13 @@ Prioridade da configuração: ecrã de administração → variáveis `GDRIVE_*`
 
 ## Segurança
 
-- O login devolve um token assinado (HMAC) e guarda-o num cookie `httpOnly` (`SameSite=Strict`), válido 7 dias.
-- Todas as operações de escrita (fotos, coleções, categorias, definições, sincronizações, credenciais) exigem sessão.
-- `rclone` e `exiftool` correm com `execFile` (sem shell) e com caminhos validados dentro da pasta das fotos.
+Resumo (os detalhes e o porquê de cada alteração estão em [SEGURANCA.md](SEGURANCA.md)):
+
+- O login devolve um token assinado (HMAC) num cookie `httpOnly`, `SameSite=Strict` e `Secure` (em HTTPS).
+  O logout invalida o token; mudar `ADMIN_USER`/`ADMIN_PASS` invalida todas as sessões. 10 tentativas falhadas
+  em 15 minutos bloqueiam o IP.
+- Todas as operações de escrita (fotos, coleções, categorias, definições, sincronizações, credenciais) exigem sessão,
+  são `POST`/`PUT`/`DELETE` (a sincronização é `POST /api/sync`) e pedidos vindos de outros sites são recusados.
+- Cabeçalhos de segurança (CSP estrita, HSTS, `nosniff`, `frame-ancestors 'none'`, `Referrer-Policy`).
+  O Tailwind é compilado com o site (sem CDN): o site não carrega nada de servidores externos.
+- `rclone` e `exiftool` correm sem shell e com nomes/caminhos validados.

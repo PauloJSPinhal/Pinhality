@@ -1,4 +1,5 @@
 # Desenvolvimento local, igual à produção mas com hot reload:
+# Paulo: o login admin/admin daqui só funciona em desenvolvimento; em produção é recusado.
 #   docker compose -f docker-compose.dev.yml up --build
 # - Um só contentor com Vite (http://localhost:5173) e nodemon (API na porta 3000).
 # - Só o código é montado do disco. Dados e fotos ficam em volumes nomeados que começam vazios;

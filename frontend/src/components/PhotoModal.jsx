@@ -43,7 +43,7 @@ export default function PhotoModal({ photo, onClose, onEdit, onDelete, onOpenFul
 
             <h2 className="text-xl font-bold text-white mb-3">{photo.title}</h2>
 
-            {/* Original em resolução completa (vem do Google Drive a pedido) */}
+            {/* Paulo: o detalhe mostra a versão web (~1600px); o original completo vem do Drive só se o pedirem */}
             <div className="flex gap-2 mb-4">
               <a
                 href={originalSrc(photo)}

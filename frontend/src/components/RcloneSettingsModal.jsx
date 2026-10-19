@@ -2,6 +2,8 @@
 // frontend/src/components/RcloneSettingsModal.jsx
 // Credenciais do rclone (Google Drive) na área de administração.
 // Os segredos nunca voltam ao browser: só se mostra se existem.
+// Paulo: este ecrã substitui o rclone.conf copiado à mão. O token fica só no servidor (ficheiro com
+// permissões 600); campos secretos vazios mantêm o valor guardado.
 // ========================================
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../api';
@@ -70,7 +72,7 @@ export default function RcloneSettingsModal({ isOpen, onClose, reason }) {
     setError('');
     setTestResult(null);
     if (!status?.stored?.hasToken && !form.token.trim()) {
-      setError('Cole o token do Google Drive (JSON devolvido por "rclone authorize drive").');
+      setError('Cole o token do Google Drive (JSON devolvido pelo "rclone authorize").');
       return;
     }
     setSaving(true);
@@ -181,7 +183,7 @@ export default function RcloneSettingsModal({ isOpen, onClose, reason }) {
                 spellCheck={false}
               />
               <p className="text-xs text-gray-500 mt-1">
-                Num computador com o rclone, corra <code>rclone authorize "drive"</code>, inicie sessão na conta Google e cole aqui o JSON que aparece.
+                Num computador com o rclone, corra <code className="break-all">rclone authorize "drive" "eyJzY29wZSI6ImRyaXZlLnJlYWRvbmx5In0"</code> (acesso só de leitura), inicie sessão na conta Google e cole aqui o JSON que aparece.
               </p>
             </div>
 

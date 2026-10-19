@@ -13,7 +13,7 @@ export default function AuthModal({ onLogin, onClose }) {
 
     try {
       // Pedido relativo: em produção é o mesmo servidor; em dev passa pelo proxy do Vite.
-      // O servidor guarda a sessão num cookie httpOnly.
+      // Paulo: o servidor guarda a sessão num cookie httpOnly; já não basta "ligar" o modo admin no browser.
       const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

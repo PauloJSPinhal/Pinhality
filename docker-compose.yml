@@ -1,4 +1,6 @@
 # Produção (Coolify): um só contentor com a API, as fotos e o site.
+# Paulo: antes eram dois serviços (nginx + backend) e o compose montava ../dados_privados, uma pasta que
+# não existe no servidor do Coolify. Agora tudo fica em volumes nomeados que sobrevivem aos deploys.
 # - Sem portas publicadas: o Coolify liga o domínio ao serviço "app", porta 3000.
 # - Sem caminhos fora do repositório; dados e fotos ficam em volumes nomeados.
 # - Variáveis definem-se no separador "Environment Variables" do Coolify.
@@ -17,6 +19,7 @@ services:
       - DATA_DIR=/data
       - PHOTOS_DIR=/dados_privados/fotos_gdrive
       - ADMIN_USER=${ADMIN_USER:?Define ADMIN_USER no Coolify}
+      # Paulo: em produção palavras-passe óbvias (admin, teste, 123456, igual ao utilizador...) são recusadas
       - ADMIN_PASS=${ADMIN_PASS:?Define ADMIN_PASS no Coolify}
       # Opcional: se vazio, é gerado um segredo e guardado em /data/private
       - SESSION_SECRET=${SESSION_SECRET:-}
@@ -31,6 +34,9 @@ services:
       # Originais: servidos a pedido a partir do Drive; cache em disco opcional (MB, 0 = sem cache)
       - ORIGINAL_CACHE_MB=${ORIGINAL_CACHE_MB:-0}
       - ORIGINALS_PUBLIC=${ORIGINALS_PUBLIC:-true}
+      # Paulo: coordenadas GPS escondidas dos visitantes por omissão (false); true para as mostrar
+      - SHOW_GPS=${SHOW_GPS:-false}
+      - MAX_ORIGINAL_STREAMS=${MAX_ORIGINAL_STREAMS:-4}
       # Imagens processadas em paralelo na sincronização
       - SYNC_CONCURRENCY=${SYNC_CONCURRENCY:-3}
     volumes:
@@ -39,6 +45,19 @@ services:
       # derivados/<coleção>/thumb|web/*.webp (+ manifest.json); fotos_gdrive/ só no formato antigo
       - pinhality-privado:/dados_privados
     restart: unless-stopped
+    # Paulo: o contentor arranca como root só para acertar o dono dos volumes e passa logo para o
+    # utilizador "node". Estas opções retiram-lhe todas as outras capacidades do Linux e impedem
+    # que ganhe privilégios depois.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 10s

@@ -7,6 +7,10 @@
 //   3. gera <nome>.webp de ~400px (miniatura) e ~1600px (web) com o sharp
 //   4. apaga o original temporário
 // O original completo é servido a pedido com "rclone cat" (com cache opcional em disco).
+//
+// Paulo: fiz isto para poupar espaço no servidor: com a sincronização antiga, todos os originais (vários MB
+// cada) ficavam no volume. Agora ficam só os WebP (cerca de 8% do tamanho) e o original vem do Drive quando
+// alguém o pede. Os WebP são gerados sem metadados, por isso não levam o EXIF nem as coordenadas GPS.
 // ========================================
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -188,7 +192,7 @@ function createMedia(opts) {
   const {
     photosDir, derivedDir, cacheDir, tmpBase = os.tmpdir(),
     cacheMb = 0, concurrency = 3, thumbSize = 400, webSize = 1600,
-    keepLocalOriginals = false,
+    keepLocalOriginals = false, maxOriginalStreams = 4,
     getRcloneSource, runRclone, rcloneEnvArgs, joinRemote, describeRcloneError, isValidName
   } = opts;
 
@@ -403,6 +407,8 @@ function createMedia(opts) {
           const listFile = path.join(tmpDir, '.files');
           await fs.writeFile(listFile, chunk.map(f => keyOf(f.col, f.name)).join('\n') + '\n');
           // Descarrega o lote (caminhos relativos à pasta remota) - sem interpretar comentários
+          // Paulo: a lista de ficheiros vai num ficheiro (--files-from-raw) e não na linha de comandos,
+          // por isso nenhum nome de ficheiro do Drive pode ser interpretado como opção do rclone.
           const dl = await runRclone(['copy', src.remote, path.join(tmpDir, 'files'), '--files-from-raw', listFile,
             '--no-traverse', '--transfers', String(concurrency), '--retries', '2'], src, 30 * 60 * 1000);
           if (!dl.ok) {
@@ -470,88 +476,139 @@ function createMedia(opts) {
     }
   }
 
-  async function serveOriginal(req, res, col, file) {
+  // Paulo: o original em resolução completa já não fica no servidor; é lido do Drive com "rclone cat"
+  // (spawn, sem shell) e enviado ao browser à medida que chega. Só se servem ficheiros que a
+  // sincronização conhece (manifesto), por isso não dá para pedir outros ficheiros do teu Drive.
+  let activeStreams = 0;
+
+  async function serveOriginal(req, res, col, file, { stripGps = false } = {}) {
     if (!isValidName(col) || !isValidName(file) || !IMAGE_RE.test(file)) {
       return res.status(400).json({ error: 'Caminho inválido' });
     }
     const disposition = `${req.query.download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(file)}`;
-
-    // Formato antigo: original guardado localmente
     const local = path.join(photosDir, col, file);
-    if (fsSync.existsSync(local)) {
-      res.setHeader('Content-Disposition', disposition);
-      return res.sendFile(local);
-    }
-
+    const hasLocal = fsSync.existsSync(local);
     const entry = manifest[keyOf(col, file)];
-    if (!entry) return res.status(404).json({ error: 'Foto não encontrada' });
+    if (!hasLocal && !entry) return res.status(404).json({ error: 'Foto não encontrada' });
 
-    const cacheFile = path.join(cacheDir, `${crypto.createHash('sha1').update(`${keyOf(col, file)}:${entry.v}`).digest('hex')}${path.extname(file).toLowerCase()}`);
-    if (cacheMb > 0 && fsSync.existsSync(cacheFile)) {
+    // Paulo: limite de transferências simultâneas (protege a ligação e a quota do Drive)
+    if (activeStreams >= maxOriginalStreams) {
+      res.setHeader('Retry-After', '5');
+      return res.status(503).json({ error: 'Servidor ocupado. Tente novamente dentro de alguns segundos.' });
+    }
+    activeStreams++;
+    let released = false;
+    const release = () => { if (!released) { released = true; activeStreams--; } };
+    res.on('close', release);
+
+    const headers = {
+      'Content-Type': mimeFor(file),
+      'Content-Disposition': disposition,
+      'Cache-Control': 'private, max-age=3600'
+    };
+
+    // Origem dos bytes: disco (formato antigo), cache, ou Drive
+    let source = null;      // stream legível
+    let child = null;       // processo rclone, se for do Drive
+    let knownSize = null;
+    let stderr = '';
+    const cacheFile = entry
+      ? path.join(cacheDir, `${crypto.createHash('sha1').update(`${keyOf(col, file)}:${entry.v}`).digest('hex')}${path.extname(file).toLowerCase()}`)
+      : null;
+
+    if (hasLocal) {
+      source = fsSync.createReadStream(local);
+      knownSize = (await fs.stat(local)).size;
+    } else if (cacheMb > 0 && fsSync.existsSync(cacheFile)) {
       const now = new Date();
       await fs.utimes(cacheFile, now, now).catch(() => {});
-      res.setHeader('Content-Disposition', disposition);
-      return res.sendFile(cacheFile, { headers: { 'Content-Type': mimeFor(file) } });
+      source = fsSync.createReadStream(cacheFile);
+      knownSize = (await fs.stat(cacheFile)).size;
+    } else {
+      const src = await getRcloneSource();
+      if (!src) { release(); return res.status(503).json({ error: 'Original indisponível de momento.' }); }
+      const { env, args } = rcloneEnvArgs(src);
+      child = spawn('rclone', ['cat', joinRemote(joinRemote(src.remote, col), file), ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+      child.stderr.on('data', d => { stderr += d; if (stderr.length > 4000) stderr = stderr.slice(-4000); });
+      child.on('error', () => {});
+      source = child.stdout;
+      knownSize = entry.size;
     }
 
-    const src = await getRcloneSource();
-    if (!src) return res.status(503).json({ error: 'Ligação ao Google Drive não configurada', code: 'RCLONE_NOT_CONFIGURED' });
-
-    const { env, args } = rcloneEnvArgs(src);
-    const child = spawn('rclone', ['cat', joinRemote(joinRemote(src.remote, col), file), ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] });
-
+    // Cache em disco (só para o que veio do Drive)
     let cacheStream = null;
     let cacheTmp = null;
-    if (cacheMb > 0) {
+    let cachedBytes = 0;
+    if (child && cacheMb > 0) {
       await fs.mkdir(cacheDir, { recursive: true });
       cacheTmp = `${cacheFile}.${process.pid}.${Date.now()}.tmp`;
       cacheStream = fsSync.createWriteStream(cacheTmp);
+      source.on('data', (chunk) => { cachedBytes += chunk.length; cacheStream.write(chunk); });
+    }
+
+    // Paulo: para visitantes, as coordenadas GPS são retiradas do original com o exiftool
+    // (lê da entrada e escreve para a saída, sem ficheiros temporários). O tamanho final muda, por isso
+    // nesse caso não se envia Content-Length.
+    let output = source;
+    let exif = null;
+    if (stripGps) {
+      exif = spawn('exiftool', ['-q', '-q', '-gps:all=', '-xmp:geotag=', '-o', '-', '-'], { stdio: ['pipe', 'pipe', 'ignore'] });
+      exif.on('error', () => {});
+      exif.stdin.on('error', () => {});
+      source.pipe(exif.stdin);
+      output = exif.stdout;
+    } else if (knownSize !== null) {
+      headers['Content-Length'] = knownSize;
     }
 
     let started = false;
-    let bytes = 0;
-    let stderr = '';
-    child.stderr.on('data', d => { stderr += d; if (stderr.length > 4000) stderr = stderr.slice(-4000); });
-    child.stdout.on('data', (chunk) => {
+    let sent = 0;
+    output.on('data', (chunk) => {
       if (!started) {
         started = true;
-        res.writeHead(200, {
-          'Content-Type': mimeFor(file),
-          'Content-Length': entry.size,
-          'Content-Disposition': disposition,
-          'Cache-Control': 'private, max-age=3600'
-        });
+        res.writeHead(200, headers);
       }
-      bytes += chunk.length;
-      if (cacheStream) cacheStream.write(chunk);
-      if (!res.write(chunk)) child.stdout.pause();
+      sent += chunk.length;
+      if (!res.write(chunk)) output.pause();
     });
-    res.on('drain', () => child.stdout.resume());
-    res.on('close', () => { if (child.exitCode === null) child.kill(); });
-    child.on('error', (error) => {
-      if (!started && !res.headersSent) res.status(500).json({ error: error.code === 'ENOENT' ? 'rclone não instalado' : error.message });
+    res.on('drain', () => output.resume());
+    res.on('close', () => {
+      if (child && child.exitCode === null) child.kill();
+      if (exif && exif.exitCode === null) exif.kill();
+      if (!child && source.destroy) source.destroy();
     });
-    child.on('close', async (code) => {
-      const ok = code === 0 && bytes === entry.size;
-      if (cacheStream) {
-        cacheStream.end(async () => {
-          if (ok) {
-            await fs.rename(cacheTmp, cacheFile).catch(() => {});
-            await evictCache().catch(() => {});
-          } else {
-            await fs.rm(cacheTmp, { force: true }).catch(() => {});
-          }
-        });
-      }
-      if (!started) {
-        if (!res.headersSent) {
-          const err = describeRcloneError({ stderr, error: null });
-          res.status(502).json({ error: `Não foi possível obter o original: ${err.message}`, code: err.code });
+
+    const finished = new Promise((resolve) => {
+      let pending = 1 + (child ? 1 : 0);
+      let childCode = 0;
+      const done = () => { if (--pending === 0) resolve(childCode); };
+      output.on('end', done);
+      output.on('error', done);
+      if (child) child.on('close', (code) => { childCode = code; done(); });
+    });
+    const childCode = await finished;
+
+    if (cacheStream) {
+      const ok = childCode === 0 && cachedBytes === entry.size;
+      cacheStream.end(async () => {
+        if (ok) {
+          await fs.rename(cacheTmp, cacheFile).catch(() => {});
+          await evictCache().catch(() => {});
+        } else {
+          await fs.rm(cacheTmp, { force: true }).catch(() => {});
         }
-        return;
+      });
+    }
+    release();
+    if (!started) {
+      if (!res.headersSent) {
+        if (stderr) console.error('Erro ao obter original:', describeRcloneError({ stderr, error: null }).message);
+        // Paulo: mensagem genérica para o público (o erro detalhado fica só nos logs do servidor)
+        res.status(502).json({ error: 'Não foi possível obter o original.' });
       }
-      res.end();
-    });
+      return;
+    }
+    res.end();
   }
 
   return {

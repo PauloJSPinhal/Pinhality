@@ -78,3 +78,9 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+/* Paulo: o Tailwind é gerado aqui no build (antes vinha da CDN). Fica depois dos estilos acima,
+   tal como acontecia com a CDN, para o aspeto ficar igual. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
