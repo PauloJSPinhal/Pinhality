@@ -10,6 +10,7 @@ import AuthModal from './components/AuthModal'
 import ManageCollectionsModal from './components/ManageCollectionsModal'
 import ManageCategoriesModal from './components/ManageCategoriesModal'
 import RcloneSettingsModal from './components/RcloneSettingsModal'
+import BulkCategorizeModal from './components/BulkCategorizeModal'
 import { apiFetch, UNAUTHORIZED_EVENT } from './api'
 
 export default function App() {
@@ -36,6 +37,7 @@ export default function App() {
   const [showRcloneSettings, setShowRcloneSettings] = useState(false)
   const [rcloneReason, setRcloneReason] = useState('')
   const [syncJob, setSyncJob] = useState(null)
+  const [showBulkCategorize, setShowBulkCategorize] = useState(false)
 
   useEffect(() => {
     loadInitialData()
@@ -264,6 +266,22 @@ const handleOpenFullscreen = (photo) => {
     loadCollections()
     loadSettings()
     loadPhotos()
+  }
+
+  const handleBulkUpdatePhoto = async (photoData) => {
+    try {
+      const res = await apiFetch('/api/photos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(photoData)
+      })
+      if (!res.ok) return
+      const updatedPhoto = await res.json()
+      setPhotos(photos.map(p => p.id === updatedPhoto.id ? updatedPhoto : p))
+    } catch (error) {
+      console.error('Erro ao atualizar foto:', error)
+      alert('Erro ao atualizar foto')
+    }
   }
 
   const handleCategoriesUpdate = () => {
@@ -580,6 +598,17 @@ const handleOpenFullscreen = (photo) => {
                           <span>Gerir Categorias</span>
                         </button>
 
+                        <button
+                          onClick={() => {
+                            setShowBulkCategorize(true)
+                            setShowManageMenu(false)
+                          }}
+                          className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
+                        >
+                          <span>⚡</span>
+                          <span>Categorização Rápida</span>
+                        </button>
+
                         {/* Sincronizar com Google Drive (rclone) */}
                         <button
                           onClick={handleSyncDrive}
@@ -857,6 +886,17 @@ const handleOpenFullscreen = (photo) => {
         onClose={() => setShowRcloneSettings(false)}
         reason={rcloneReason}
       />
+
+      {showBulkCategorize && (
+        <BulkCategorizeModal
+          isOpen={showBulkCategorize}
+          onClose={() => setShowBulkCategorize(false)}
+          photos={filteredPhotos}
+          categories={categories}
+          onUpdatePhoto={handleBulkUpdatePhoto}
+        />
+      )}
+    
 
       {showManageCategories && (
         <ManageCategoriesModal
