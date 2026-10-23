@@ -7,10 +7,6 @@
 //   3. gera <nome>.webp de ~400px (miniatura) e ~1600px (web) com o sharp
 //   4. apaga o original temporário
 // O original completo é servido a pedido com "rclone cat" (com cache opcional em disco).
-//
-// Paulo: fiz isto para poupar espaço no servidor: com a sincronização antiga, todos os originais (vários MB
-// cada) ficavam no volume. Agora ficam só os WebP (cerca de 8% do tamanho) e o original vem do Drive quando
-// alguém o pede. Os WebP são gerados sem metadados, por isso não levam o EXIF nem as coordenadas GPS.
 // ========================================
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -38,12 +34,10 @@ const EXIF_ARGS = ['-j', '-DateTimeOriginal', '-ISOSpeedRatings', '-ISO', '-FNum
   '-Make', '-Model', '-LensModel', '-ExposureProgram', '-MeteringMode', '-ExposureCompensation', '-WhiteBalance',
   '-FocusMode', '-Copyright', '-GPSLatitude', '-GPSLongitude', '-GPSLatitudeRef', '-GPSLongitudeRef'];
 
-// Campos EXIF que a app usa (os mesmos do formulário de edição)
 const EXIF_FIELDS = ['date', 'time', 'iso', 'aperture', 'shutterSpeed', 'focalLength', 'camera', 'lens',
   'exposureMode', 'meteringMode', 'exposureCompensation', 'whiteBalance', 'focusMode', 'copyright',
   'gpsLatitude', 'gpsLongitude'];
 
-// Converte a saída do exiftool nos campos da app
 function parseExifData(data) {
   data = data || {};
   const result = {};
@@ -188,6 +182,18 @@ async function mapLimit(items, limit, fn) {
   await Promise.all(workers);
 }
 
+// Permite subpastas (mãe/filha): "Viagens/lisboa-2024" - máx 2 níveis
+function isValidFolderPathLocal(p) {
+  if (typeof p !== 'string' || p.length === 0 || p.length > 200) return false;
+  if (p.trim() !== p) return false;
+  const segments = p.split('/');
+  if (segments.length > 2) return false;
+  for (const seg of segments) {
+    if (!seg || seg === '.' || seg === '..' || seg.startsWith('-') || /[\x00-\x1f\x7f]/.test(seg)) return false;
+  }
+  return true;
+}
+
 function createMedia(opts) {
   const {
     photosDir, derivedDir, cacheDir, tmpBase = os.tmpdir(),
@@ -205,7 +211,6 @@ function createMedia(opts) {
 
   async function init() {
     await fs.mkdir(derivedDir, { recursive: true });
-    // Restos de uma sincronização interrompida
     await fs.rm(tmpBase, { recursive: true, force: true }).catch(() => {});
     try {
       manifest = JSON.parse(await fs.readFile(MANIFEST_FILE, 'utf8'));
@@ -220,12 +225,17 @@ function createMedia(opts) {
     await fs.rename(tmp, MANIFEST_FILE);
   }
 
-  // "photos/<coleção>/<ficheiro>" -> { col, file }
   function parseImageUrl(imageUrl) {
     if (typeof imageUrl !== 'string') return null;
     const parts = imageUrl.replace(/^\/+/, '').split('/');
-    if (parts.length !== 3 || parts[0] !== 'photos') return null;
-    return { col: parts[1], file: parts[2] };
+    // photos/<col>/<file> (3 partes) OU photos/<mãe>/<filha>/<file> (4 partes)
+    if (parts.length === 3 && parts[0] === 'photos') {
+      return { col: parts[1], file: parts[2] };
+    }
+    if (parts.length === 4 && parts[0] === 'photos') {
+      return { col: `${parts[1]}/${parts[2]}`, file: parts[3] };
+    }
+    return null;
   }
 
   function entryFor(imageUrl) {
@@ -233,13 +243,9 @@ function createMedia(opts) {
     return p ? manifest[keyOf(p.col, p.file)] || null : null;
   }
 
-  // URLs para o frontend. Sem derivados (formato antigo), tudo aponta para o ficheiro local.
   function urlsFor(imageUrl) {
     const p = parseImageUrl(imageUrl);
     const entry = p && manifest[keyOf(p.col, p.file)];
-    // Paulo: mesmo sem derivados, o original passa pela rota /photos/original, que envia o cabeçalho
-    // de download (Content-Disposition: attachment). Antes apontava para o ficheiro estático e o
-    // botão Descarregar abria a imagem numa aba em vez de a transferir.
     if (!entry) return { thumbUrl: imageUrl, webUrl: imageUrl, originalUrl: p ? `photos/original/${p.col}/${p.file}` : imageUrl };
     return {
       thumbUrl: `photos/thumb/${p.col}/${p.file}.webp`,
@@ -254,13 +260,15 @@ function createMedia(opts) {
 
   function listEntries() {
     return Object.entries(manifest).map(([key, entry]) => {
-      const i = key.indexOf('/');
+      // lastIndexOf: para chaves como "Viagens/lisboa-2024/foto.jpg",
+      // o último '/' separa a coleção ("Viagens/lisboa-2024") do ficheiro ("foto.jpg")
+      const i = key.lastIndexOf('/');
       return { col: key.slice(0, i), file: key.slice(i + 1), entry };
     });
   }
 
   function derivedFile(kind, col, file) {
-    if (!isValidName(col) || typeof file !== 'string' || !file.endsWith('.webp')) return null;
+    if ((!isValidName(col) && !isValidFolderPathLocal(col)) || typeof file !== 'string' || !file.endsWith('.webp')) return null;
     const name = file.slice(0, -5);
     if (!isValidName(name) || !manifest[keyOf(col, name)]) return null;
     return kind === 'thumb' ? thumbPath(col, name) : webPath(col, name);
@@ -279,25 +287,48 @@ function createMedia(opts) {
     const items = JSON.parse(result.stdout || '[]');
     const folders = new Set();
     const files = [];
+    // Identificar pastas-mãe (contentores com subpastas) para ignorar ficheiros diretos nelas
+    const containerFolders = new Set();
+    if (!scopeCol) {
+      for (const item of items) {
+        if (!item.IsDir) continue;
+        const parts = item.Path.split('/');
+        if (parts.length === 1) {
+          // Pasta top-level: é contentor se tiver subpastas
+          const hasSubdirs = items.some(i => i.IsDir && i.Path.startsWith(parts[0] + '/'));
+          if (hasSubdirs) containerFolders.add(parts[0]);
+        }
+      }
+    }
     for (const item of items) {
+      if (item.IsDir) continue;
       const parts = item.Path.split('/');
       if (scopeCol) {
-        if (item.IsDir || parts.length !== 1) continue;
+        // Com scopeCol: ficheiros diretos na pasta remota especificada
+        if (parts.length !== 1) continue;
         files.push({ col: scopeCol, name: parts[0], item });
         folders.add(scopeCol);
       } else {
-        if (item.IsDir) {
-          if (parts.length === 1) folders.add(parts[0]);
-          continue;
+        // Sem scopeCol: suporta 2 níveis
+        if (parts.length === 2) {
+          // Formato antigo: top-level/ficheiro
+          // Ignora se for pasta-mãe (contentor)
+          if (containerFolders.has(parts[0])) continue;
+          files.push({ col: parts[0], name: parts[1], item });
+          folders.add(parts[0]);
+        } else if (parts.length === 3) {
+          // Formato novo: mãe/filha/ficheiro
+          const folderPath = `${parts[0]}/${parts[1]}`;
+          files.push({ col: folderPath, name: parts[2], item });
+          folders.add(folderPath);
         }
-        if (parts.length !== 2) continue;
-        files.push({ col: parts[0], name: parts[1], item });
+        // parts.length === 1 (ficheiro na raiz) ou >3 (profundidade excessiva): ignora
       }
     }
     return {
-      folders: [...folders].filter(isValidName),
+      folders: [...folders].filter(f => isValidName(f) || isValidFolderPathLocal(f)),
       files: files
-        .filter(f => isValidName(f.col) && isValidName(f.name) && IMAGE_RE.test(f.name))
+        .filter(f => (isValidName(f.col) || isValidFolderPathLocal(f.col)) && isValidName(f.name) && IMAGE_RE.test(f.name))
         .map(f => ({
           col: f.col, name: f.name, size: f.item.Size, modTime: f.item.ModTime,
           hash: (f.item.Hashes && (f.item.Hashes.md5 || f.item.Hashes.sha1)) || null
@@ -360,14 +391,20 @@ function createMedia(opts) {
     return job ? { ...job, failed: job.failed.slice(0, 50) } : { running: false };
   }
 
-  async function runSync(scopeCol, afterSync) {
+  async function runSync(scopeCol, afterSync, scopeColsBatch) {
+    const colsToSync = Array.isArray(scopeColsBatch) && scopeColsBatch.length > 0 
+      ? scopeColsBatch 
+      : (scopeCol ? [scopeCol] : [null]);
+    
     if (job && job.running) {
       const e = new Error('Já está a decorrer uma sincronização.');
       e.code = 'SYNC_RUNNING';
       throw e;
     }
     job = {
-      running: true, scope: scopeCol || 'todas', phase: 'a listar o Drive',
+      running: true, 
+      scope: colsToSync.length === 1 ? (colsToSync[0] || 'todas') : `${colsToSync.length} coleções`,
+      phase: 'a listar o Drive',
       startedAt: new Date().toISOString(), finishedAt: null,
       listed: 0, total: 0, done: 0, processed: 0, skipped: 0, removed: 0, failed: [],
       bytesOriginal: 0, bytesDerived: 0, error: null, code: null, db: null
@@ -380,25 +417,28 @@ function createMedia(opts) {
         const src = await getRcloneSource();
         if (!src) throw Object.assign(new Error('A ligação ao Google Drive ainda não está configurada.'), { code: 'RCLONE_NOT_CONFIGURED' });
 
-        const { folders, files } = await listRemote(src, scopeCol);
-        // Proteção: uma pasta remota vazia não pode apagar tudo
-        if (!scopeCol && folders.length === 0) {
-          throw Object.assign(new Error(`A pasta remota ${src.remote} não tem subpastas. Verifique o ID da pasta e o caminho.`), { code: 'RCLONE_EMPTY' });
+        const { folders: allFolders, files: allFiles } = await listRemote(src, null);
+        if (colsToSync[0] === null && allFolders.length === 0) {
+          throw Object.assign(new Error(`A pasta remota ${src.remote} não tem subpastas.`), { code: 'RCLONE_EMPTY' });
         }
-        current.listed = files.length;
+        
+        let filesToProcess = allFiles;
+        if (colsToSync[0] !== null) {
+          filesToProcess = allFiles.filter(f => colsToSync.includes(f.col));
+        }
+        current.listed = filesToProcess.length;
 
-        // Ficheiros apagados do Drive
-        const remoteKeys = new Set(files.map(f => keyOf(f.col, f.name)));
+        const remoteKeys = new Set(filesToProcess.map(f => keyOf(f.col, f.name)));
         for (const { col, file } of listEntries()) {
-          if (scopeCol && col !== scopeCol) continue;
+          if (colsToSync[0] !== null && !colsToSync.includes(col)) continue;
           if (!remoteKeys.has(keyOf(col, file))) {
             await removeDerived(col, file);
             current.removed++;
           }
         }
 
-        const todo = files.filter(f => !isUnchanged(f));
-        current.skipped = files.length - todo.length;
+        const todo = filesToProcess.filter(f => !isUnchanged(f));
+        current.skipped = filesToProcess.length - todo.length;
         current.total = todo.length;
         current.phase = todo.length ? 'a processar' : 'sem alterações';
 
@@ -409,9 +449,6 @@ function createMedia(opts) {
           tmpDir = await fs.mkdtemp(path.join(tmpBase, 'pinhality-sync-'));
           const listFile = path.join(tmpDir, '.files');
           await fs.writeFile(listFile, chunk.map(f => keyOf(f.col, f.name)).join('\n') + '\n');
-          // Descarrega o lote (caminhos relativos à pasta remota) - sem interpretar comentários
-          // Paulo: a lista de ficheiros vai num ficheiro (--files-from-raw) e não na linha de comandos,
-          // por isso nenhum nome de ficheiro do Drive pode ser interpretado como opção do rclone.
           const dl = await runRclone(['copy', src.remote, path.join(tmpDir, 'files'), '--files-from-raw', listFile,
             '--no-traverse', '--transfers', String(concurrency), '--retries', '2'], src, 30 * 60 * 1000);
           if (!dl.ok) {
@@ -430,7 +467,6 @@ function createMedia(opts) {
               current.failed.push({ file: keyOf(f.col, f.name), error: error.code === 'ENOENT' ? 'não foi possível descarregar' : error.message });
             } finally {
               current.done++;
-              await fs.rm(tmpFile, { force: true }).catch(() => {});
             }
           });
           await saveManifest();
@@ -479,13 +515,10 @@ function createMedia(opts) {
     }
   }
 
-  // Paulo: o original em resolução completa já não fica no servidor; é lido do Drive com "rclone cat"
-  // (spawn, sem shell) e enviado ao browser à medida que chega. Só se servem ficheiros que a
-  // sincronização conhece (manifesto), por isso não dá para pedir outros ficheiros do teu Drive.
   let activeStreams = 0;
 
   async function serveOriginal(req, res, col, file, { stripGps = false } = {}) {
-    if (!isValidName(col) || !isValidName(file) || !IMAGE_RE.test(file)) {
+    if ((!isValidName(col) && !isValidFolderPathLocal(col)) || !isValidName(file) || !IMAGE_RE.test(file)) {
       return res.status(400).json({ error: 'Caminho inválido' });
     }
     const disposition = `${req.query.download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(file)}`;
@@ -494,7 +527,6 @@ function createMedia(opts) {
     const entry = manifest[keyOf(col, file)];
     if (!hasLocal && !entry) return res.status(404).json({ error: 'Foto não encontrada' });
 
-    // Paulo: limite de transferências simultâneas (protege a ligação e a quota do Drive)
     if (activeStreams >= maxOriginalStreams) {
       res.setHeader('Retry-After', '5');
       return res.status(503).json({ error: 'Servidor ocupado. Tente novamente dentro de alguns segundos.' });
@@ -510,9 +542,8 @@ function createMedia(opts) {
       'Cache-Control': 'private, max-age=3600'
     };
 
-    // Origem dos bytes: disco (formato antigo), cache, ou Drive
-    let source = null;      // stream legível
-    let child = null;       // processo rclone, se for do Drive
+    let source = null;
+    let child = null;
     let knownSize = null;
     let stderr = '';
     const cacheFile = entry
@@ -538,7 +569,6 @@ function createMedia(opts) {
       knownSize = entry.size;
     }
 
-    // Cache em disco (só para o que veio do Drive)
     let cacheStream = null;
     let cacheTmp = null;
     let cachedBytes = 0;
@@ -549,9 +579,6 @@ function createMedia(opts) {
       source.on('data', (chunk) => { cachedBytes += chunk.length; cacheStream.write(chunk); });
     }
 
-    // Paulo: para visitantes, as coordenadas GPS são retiradas do original com o exiftool
-    // (lê da entrada e escreve para a saída, sem ficheiros temporários). O tamanho final muda, por isso
-    // nesse caso não se envia Content-Length.
     let output = source;
     let exif = null;
     if (stripGps) {
@@ -606,7 +633,6 @@ function createMedia(opts) {
     if (!started) {
       if (!res.headersSent) {
         if (stderr) console.error('Erro ao obter original:', describeRcloneError({ stderr, error: null }).message);
-        // Paulo: mensagem genérica para o público (o erro detalhado fica só nos logs do servidor)
         res.status(502).json({ error: 'Não foi possível obter o original.' });
       }
       return;

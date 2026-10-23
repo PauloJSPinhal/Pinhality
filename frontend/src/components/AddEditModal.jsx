@@ -290,24 +290,65 @@ export default function AddEditModal({
             <div>
               <label className="block text-gray-300 mb-2">Categorias (múltipla seleção)</label>
               <div className="bg-gray-700 border border-gray-600 rounded-lg p-3 max-h-48 overflow-y-auto">
-                {categories.map(cat => (
-                  <label key={cat} className="flex items-center space-x-2 py-2 cursor-pointer hover:bg-gray-600 px-2 rounded">
-                    <input
-                      type="checkbox"
-                      checked={Array.isArray(formData.categories) ? formData.categories.includes(cat) : false}
-                      onChange={(e) => {
-                        const currentCategories = Array.isArray(formData.categories) ? formData.categories : [];
-                        if (e.target.checked) {
-                          setFormData({ ...formData, categories: [...currentCategories, cat] });
-                        } else {
-                          setFormData({ ...formData, categories: currentCategories.filter(c => c !== cat) });
-                        }
-                      }}
-                      className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 rounded focus:ring-blue-500"
-                    />
-                    <span className="text-white min-w-0 break-words">{cat}</span>
-                  </label>
-                ))}
+                {(() => {
+                  // Suporta ambos os formatos: array antigo ou objeto novo {groups, categories}
+                  const catGroups = Array.isArray(categories) ? [] : (categories?.groups || []);
+                  const allCats = Array.isArray(categories) ? categories.map(name => ({ name })) : (categories?.categories || []);
+                  if (catGroups.length === 0) {
+                    // Formato antigo (fallback): lista simples
+                    return allCats.map(cat => {
+                      const catName = typeof cat === 'string' ? cat : cat.name;
+                      return (
+                        <label key={catName} className="flex items-center space-x-2 py-2 cursor-pointer hover:bg-gray-600 px-2 rounded">
+                          <input
+                            type="checkbox"
+                            checked={Array.isArray(formData.categories) ? formData.categories.includes(catName) : false}
+                            onChange={(e) => {
+                              const currentCategories = Array.isArray(formData.categories) ? formData.categories : [];
+                              if (e.target.checked) {
+                                setFormData({ ...formData, categories: [...currentCategories, catName] });
+                              } else {
+                                setFormData({ ...formData, categories: currentCategories.filter(c => c !== catName) });
+                              }
+                            }}
+                            className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 rounded focus:ring-blue-500"
+                          />
+                          <span className="text-white min-w-0 break-words">{catName}</span>
+                        </label>
+                      );
+                    });
+                  }
+                  // Formato novo: agrupado por grupos
+                  return catGroups.map(group => {
+                    const catsInGroup = allCats.filter(c => c.groupId === group.id);
+                    if (catsInGroup.length === 0) return null;
+                    return (
+                      <div key={group.id} className="mb-3">
+                        <div className="text-gray-400 text-xs font-semibold mb-1 px-2 sticky top-0 bg-gray-700 py-1">
+                          {group.icon} {group.name}
+                        </div>
+                        {catsInGroup.map(cat => (
+                          <label key={cat.name} className="flex items-center space-x-2 py-1.5 cursor-pointer hover:bg-gray-600 px-2 rounded">
+                            <input
+                              type="checkbox"
+                              checked={Array.isArray(formData.categories) ? formData.categories.includes(cat.name) : false}
+                              onChange={(e) => {
+                                const currentCategories = Array.isArray(formData.categories) ? formData.categories : [];
+                                if (e.target.checked) {
+                                  setFormData({ ...formData, categories: [...currentCategories, cat.name] });
+                                } else {
+                                  setFormData({ ...formData, categories: currentCategories.filter(c => c !== cat.name) });
+                                }
+                              }}
+                              className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 rounded focus:ring-blue-500"
+                            />
+                            <span className="text-white min-w-0 break-words text-sm">{cat.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
               <p className="text-xs text-gray-500 mt-1">Selecione uma ou mais categorias</p>
             </div>
