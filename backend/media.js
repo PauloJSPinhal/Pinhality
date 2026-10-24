@@ -287,42 +287,45 @@ function createMedia(opts) {
     const items = JSON.parse(result.stdout || '[]');
     const folders = new Set();
     const files = [];
-    // Identificar pastas-mãe (contentores com subpastas) para ignorar ficheiros diretos nelas
+
     const containerFolders = new Set();
     if (!scopeCol) {
       for (const item of items) {
         if (!item.IsDir) continue;
         const parts = item.Path.split('/');
         if (parts.length === 1) {
-          // Pasta top-level: é contentor se tiver subpastas
-          const hasSubdirs = items.some(i => i.IsDir && i.Path.startsWith(parts[0] + '/'));
+          const hasSubdirs = items.some(candidate =>
+            candidate.IsDir && candidate.Path.startsWith(`${parts[0]}/`)
+          );
           if (hasSubdirs) containerFolders.add(parts[0]);
         }
       }
     }
+
     for (const item of items) {
       if (item.IsDir) continue;
       const parts = item.Path.split('/');
       if (scopeCol) {
-        // Com scopeCol: ficheiros diretos na pasta remota especificada
-        if (parts.length !== 1) continue;
-        files.push({ col: scopeCol, name: parts[0], item });
-        folders.add(scopeCol);
+        // Com scopeCol: suporta ficheiros diretos (parts.length === 1) E em subpastas (parts.length === 2)
+        if (parts.length === 1) {
+          files.push({ col: scopeCol, name: parts[0], item });
+          folders.add(scopeCol);
+        } else if (parts.length === 2) {
+          // NOVO: Se for uma subpasta da scopeCol, junta o nome
+          const colPath = `${scopeCol}/${parts[0]}`;
+          files.push({ col: colPath, name: parts[1], item });
+          folders.add(colPath);
+        }
       } else {
-        // Sem scopeCol: suporta 2 níveis
         if (parts.length === 2) {
-          // Formato antigo: top-level/ficheiro
-          // Ignora se for pasta-mãe (contentor)
           if (containerFolders.has(parts[0])) continue;
           files.push({ col: parts[0], name: parts[1], item });
           folders.add(parts[0]);
         } else if (parts.length === 3) {
-          // Formato novo: mãe/filha/ficheiro
           const folderPath = `${parts[0]}/${parts[1]}`;
           files.push({ col: folderPath, name: parts[2], item });
           folders.add(folderPath);
         }
-        // parts.length === 1 (ficheiro na raiz) ou >3 (profundidade excessiva): ignora
       }
     }
     return {
@@ -346,7 +349,36 @@ function createMedia(opts) {
   async function removeDerived(col, file) {
     await fs.rm(thumbPath(col, file), { force: true });
     await fs.rm(webPath(col, file), { force: true });
+    await fs.rm(path.join(photosDir, col, file), { force: true });
     delete manifest[keyOf(col, file)];
+  }
+
+  async function removeLocalImagesMissingFromRemote(remoteKeys, scopes) {
+    let removed = 0;
+
+    async function scan(directory, collectionPath = '', depth = 0) {
+      const entries = await fs.readdir(directory, { withFileTypes: true });
+      for (const entry of entries) {
+        const filePath = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          if (depth < 2 && !entry.name.startsWith('.')) {
+            const childPath = collectionPath ? `${collectionPath}/${entry.name}` : entry.name;
+            await scan(filePath, childPath, depth + 1);
+          }
+          continue;
+        }
+        if (!entry.isFile() || !IMAGE_RE.test(entry.name) || !collectionPath) continue;
+        if (scopes && !scopes.some(scope =>
+          collectionPath === scope || collectionPath.startsWith(`${scope}/`)
+        )) continue;
+        if (remoteKeys.has(keyOf(collectionPath, entry.name))) continue;
+        await fs.rm(filePath, { force: true });
+        removed++;
+      }
+    }
+
+    await scan(photosDir);
+    return removed;
   }
 
   async function writeWebp(input, output, size, fit, quality) {
@@ -391,7 +423,7 @@ function createMedia(opts) {
     return job ? { ...job, failed: job.failed.slice(0, 50) } : { running: false };
   }
 
-  async function runSync(scopeCol, afterSync, scopeColsBatch) {
+  async function runSync(scopeCol, afterSync, scopeColsBatch, { allowEmpty = false } = {}) {
     const colsToSync = Array.isArray(scopeColsBatch) && scopeColsBatch.length > 0 
       ? scopeColsBatch 
       : (scopeCol ? [scopeCol] : [null]);
@@ -418,24 +450,37 @@ function createMedia(opts) {
         if (!src) throw Object.assign(new Error('A ligação ao Google Drive ainda não está configurada.'), { code: 'RCLONE_NOT_CONFIGURED' });
 
         const { folders: allFolders, files: allFiles } = await listRemote(src, null);
-        if (colsToSync[0] === null && allFolders.length === 0) {
+        if (!allowEmpty && colsToSync[0] === null && allFolders.length === 0) {
           throw Object.assign(new Error(`A pasta remota ${src.remote} não tem subpastas.`), { code: 'RCLONE_EMPTY' });
         }
         
         let filesToProcess = allFiles;
         if (colsToSync[0] !== null) {
-          filesToProcess = allFiles.filter(f => colsToSync.includes(f.col));
+          filesToProcess = allFiles.filter(f => {
+            return colsToSync.some(col => {
+              if (f.col === col) return true;
+              // NOVO: Se a coleção for uma pasta-mãe, inclui as sub-coleções
+              if (f.col.startsWith(col + '/')) return true;
+              return false;
+            });
+          });
         }
         current.listed = filesToProcess.length;
 
         const remoteKeys = new Set(filesToProcess.map(f => keyOf(f.col, f.name)));
         for (const { col, file } of listEntries()) {
-          if (colsToSync[0] !== null && !colsToSync.includes(col)) continue;
+          if (colsToSync[0] !== null && !colsToSync.some(scope =>
+            col === scope || col.startsWith(scope + '/')
+          )) continue;
           if (!remoteKeys.has(keyOf(col, file))) {
             await removeDerived(col, file);
             current.removed++;
           }
         }
+        current.removed += await removeLocalImagesMissingFromRemote(
+          remoteKeys,
+          colsToSync[0] === null ? null : colsToSync
+        );
 
         const todo = filesToProcess.filter(f => !isUnchanged(f));
         current.skipped = filesToProcess.length - todo.length;

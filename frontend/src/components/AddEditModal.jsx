@@ -1,5 +1,5 @@
 // ========================================
-// frontend/src/components/AddEditModal.jsx - VERSÃO COM AUTO-DETECÇÃO
+// frontend/src/components/AddEditModal.jsx
 // ========================================
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../api';
@@ -27,33 +27,19 @@ export default function AddEditModal({
     focalLength: '',
     camera: '',
     lens: '',
-    exposureMode: '',
-    meteringMode: '',
-    exposureCompensation: '',
-    whiteBalance: '',
-    focusMode: '',
-    copyright: '',
-    gpsLatitude: '',
-    gpsLongitude: '',
-    description: ''
+    description: '',
+    isFavorite: false
   });
 
   useEffect(() => {
-    if (!isOpen) return; // Se não está aberto, ignora
+    if (!isOpen) return;
     
     if (isEditing && initialData) {
-      // Extrair apenas o nome do ficheiro do path completo
-      let fileName = initialData.imageUrl?.replace('photos/', '') || '';
-      if (fileName.includes('/')) {
-        const parts = fileName.split('/');
-        fileName = parts.slice(1).join('/'); // Remove a pasta da coleção
-      }
-      
       setFormData({
         title: initialData.title || '',
-        imageUrl: fileName,
+        imageUrl: initialData.imageUrl || '',
         categories: Array.isArray(initialData.categories) ? initialData.categories : (initialData.category ? [initialData.category] : []),
-        collection: initialData.collection || '',
+        collection: initialData.collection || initialData.orphanedFromCollection || '',
         location: initialData.location || '',
         date: initialData.date || '',
         time: initialData.time || '',
@@ -63,18 +49,10 @@ export default function AddEditModal({
         focalLength: initialData.focalLength || '',
         camera: initialData.camera || '',
         lens: initialData.lens || '',
-        exposureMode: initialData.exposureMode || '',
-        meteringMode: initialData.meteringMode || '',
-        exposureCompensation: initialData.exposureCompensation || '',
-        whiteBalance: initialData.whiteBalance || '',
-        focusMode: initialData.focusMode || '',
-        copyright: initialData.copyright || '',
-        gpsLatitude: initialData.gpsLatitude || '',
-        gpsLongitude: initialData.gpsLongitude || '',
-        description: initialData.description || ''
+        description: initialData.description || '',
+        isFavorite: !!initialData.isFavorite
       });
     } else {
-      // Modo ADICIONAR - só executa UMA VEZ
       setFormData({
         title: '',
         imageUrl: '',
@@ -89,499 +67,253 @@ export default function AddEditModal({
         focalLength: '',
         camera: '',
         lens: '',
-        exposureMode: '',
-        meteringMode: '',
-        exposureCompensation: '',
-        whiteBalance: '',
-        focusMode: '',
-        copyright: '',
-        gpsLatitude: '',
-        gpsLongitude: '',
-        description: ''
+        description: '',
+        isFavorite: false
       });
     }
-  }, [isOpen]); 
+  }, [isOpen, isEditing, initialData]);
 
   const handleChange = (e) => {
-  const { name, value } = e.target;
-  
-  // Se mudou o imageUrl, tentar detectar coleção automaticamente
-  if (name === 'imageUrl') {
-    const pathParts = value.trim().split('/');
-    if (pathParts.length > 1) {
-      // Formato: "porto-2024/foto.jpg" -> coleção "porto-2024"
-      const detectedCollectionId = pathParts[0];
-      const fileName = pathParts.slice(1).join('/');
-      
-      // Verificar se a coleção existe
-      const collectionExists = collections.find(c => c.id === detectedCollectionId);
-      
-      if (collectionExists) {
-        console.log(`✅ Coleção detectada: ${detectedCollectionId}`);
-        setFormData(prev => ({ 
-          ...prev, 
-          imageUrl: fileName, // Guarda só o nome do ficheiro
-          collection: detectedCollectionId
-        }));
-      } else {
-        // Se não existe, guarda o valor como está
-        setFormData(prev => ({ ...prev, imageUrl: value }));
-      }
-    } else {
-      setFormData(prev => ({ ...prev, imageUrl: value }));
-    }
-  } else {
-    setFormData(prev => ({ ...prev, [name]: value }));
-  }
-};
-
-  const handleExtractExif = async () => {
-    if (!formData.imageUrl.trim()) {
-      alert('Por favor, introduza o nome do ficheiro');
-      return;
-    }
-    
-    try {
-      // Construir path completo para ler EXIF
-      const fullPath = formData.collection 
-        ? `photos/${formData.collection}/${formData.imageUrl.trim()}`
-        : `photos/${formData.imageUrl.trim()}`;
-      
-      const res = await apiFetch(`/api/exif?imagePath=${encodeURIComponent(fullPath)}`);
-      const exifData = await res.json();
-      
-      if (Object.keys(exifData).length === 0) {
-        alert('A imagem foi carregada, mas não contém dados EXIF.');
-      }
-      
-      setFormData(prev => ({
-        ...prev,
-        date: exifData.date || prev.date,
-        time: exifData.time || prev.time,
-        aperture: exifData.aperture || prev.aperture,
-        iso: exifData.iso || prev.iso,
-        shutterSpeed: exifData.shutterSpeed || prev.shutterSpeed,
-        focalLength: exifData.focalLength || prev.focalLength,
-        camera: exifData.camera || prev.camera,
-        lens: exifData.lens || prev.lens,
-        exposureMode: exifData.exposureMode || prev.exposureMode,
-        meteringMode: exifData.meteringMode || prev.meteringMode,
-        exposureCompensation: exifData.exposureCompensation || prev.exposureCompensation,
-        whiteBalance: exifData.whiteBalance || prev.whiteBalance,
-        focusMode: exifData.focusMode || prev.focusMode,
-        copyright: exifData.copyright || prev.copyright,
-        gpsLatitude: exifData.gpsLatitude || prev.gpsLatitude,
-        gpsLongitude: exifData.gpsLongitude || prev.gpsLongitude
-      }));
-    } catch (error) {
-      console.error('Erro ao ler EXIF:', error);
-      alert('Erro ao ler EXIF');
-    }
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
   const handleSubmit = (e) => {
-    e.preventDefault();
-    if (formData.title && formData.imageUrl && formData.collection) {
-      // Construir path completo: photos/[coleção]/[ficheiro]
-      const fullImagePath = `photos/${formData.collection}/${formData.imageUrl.trim()}`;
-      
-      onSave({
-        ...formData,
-        imageUrl: fullImagePath,
-        timestamp: Date.now()
-      });
-    } else {
-      alert('Por favor, preencha o título, ficheiro e coleção');
+    if (e && e.preventDefault) e.preventDefault();
+    
+    if (!formData.title.trim()) {
+      alert('O título é obrigatório');
+      return;
     }
+    if (!formData.collection) {
+      alert('A coleção é obrigatória');
+      return;
+    }
+    
+    // Construir path completo apenas no modo Add
+    let finalImageUrl = formData.imageUrl;
+    if (!isEditing) {
+      if (!formData.imageUrl.trim()) {
+        alert('O nome do ficheiro é obrigatório');
+        return;
+      }
+      finalImageUrl = `photos/${formData.collection}/${formData.imageUrl.trim()}`;
+    }
+    
+    onSave({
+      ...formData,
+      imageUrl: finalImageUrl,
+      timestamp: Date.now()
+    });
   };
 
   if (!isOpen) return null;
 
+  // Suporta ambos os formatos de categorias (array antigo ou objeto novo)
+  const catGroups = Array.isArray(categories) ? [] : (categories?.groups || []);
+  const allCats = Array.isArray(categories) 
+    ? categories.map(name => ({ name })) 
+    : (categories?.categories || []);
+
+  const photoPath = isEditing
+    ? formData.imageUrl
+    : formData.collection && formData.imageUrl.trim()
+      ? `photos/${formData.collection}/${formData.imageUrl.trim()}`
+      : '';
+
+  // Verifica se há detalhes técnicos para mostrar
+  const hasTechnicalDetails = formData.date || formData.time || formData.aperture || 
+    formData.iso || formData.shutterSpeed || formData.focalLength || 
+    formData.camera || formData.lens;
+
   return (
-    // Paulo: o modal nunca passa da altura visível (max-h-vd-90); só o formulário faz scroll e os botões
-    // Cancelar/Guardar ficam sempre à vista, mesmo com o teclado do telemóvel aberto
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-2 sm:p-4 overscroll-contain">
       <div className="bg-gray-800 rounded-lg max-w-2xl w-full max-h-vd-90 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between gap-3 px-4 py-4 sm:p-6 short:py-3 border-b border-gray-700">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 px-4 py-4 sm:p-6 border-b border-gray-700">
           <h2 className="text-xl sm:text-2xl font-bold text-white min-w-0 break-words">
-            {isEditing ? 'Editar Foto' : 'Adicionar Nova Foto'}
+            {isEditing ? '✏️ Editar Foto' : '➕ Adicionar Nova Foto'}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white shrink-0 flex items-center justify-center" title="Fechar">
+          <button onClick={onClose} className="text-gray-400 hover:text-white shrink-0">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
         
-        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 flex-1 min-h-0 overflow-y-auto overscroll-contain">
-          <div>
-            <label className="block text-gray-300 mb-2">Título *</label>
-            <input
-              type="text"
-              name="title"
-              value={formData.title}
-              onChange={handleChange}
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-gray-300 mb-2">
-              Nome do ficheiro *
-            </label>
-            <input
-              type="text"
-              name="imageUrl"
-              value={formData.imageUrl}
-              onChange={handleChange}
-              placeholder="foto.jpg"
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              💡 A foto será procurada na pasta da coleção selecionada
-            </p>
-            
-            {/* Feedback visual da coleção */}
-            {formData.collection && (
-              <div className="mt-2 flex items-start space-x-2 text-sm min-w-0">
-                <span className="text-green-400">✓</span>
-                <span className="text-gray-300 min-w-0 break-all">
-                  Caminho: <strong className="text-white font-mono">
-                    photos/{formData.collection}/{formData.imageUrl || '...'}
-                  </strong>
-                </span>
-              </div>
-            )}
-          </div>
-
-          {formData.imageUrl && (
-            <button
-              type="button"
-              onClick={handleExtractExif}
-              className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm transition-colors flex items-center space-x-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              <span>Ler Dados EXIF</span>
-            </button>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-5 flex-1 min-h-0 overflow-y-auto overscroll-contain">
+          
+          <div className="space-y-4">
+                        
             <div>
-              <label className="block text-gray-300 mb-2">Coleção *</label>
-              <select
-                name="collection"
-                value={formData.collection}
+              <label className="block text-gray-300 mb-2 text-sm">Título *</label>
+              <input
+                type="text"
+                name="title"
+                value={formData.title}
                 onChange={handleChange}
                 className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
-              >
-                <option value="">Selecionar coleção...</option>
-                {collections.map(col => (
-                  <option key={col.id} value={col.id}>{col.name}</option>
-                ))}
-              </select>
-              <p className="text-xs text-gray-500 mt-1">Escolha a coleção para esta foto</p>
+                autoFocus
+              />
+              {photoPath && (
+                <p className="mt-1 break-all text-xs text-gray-400">
+                  Ficheiro: <span className="font-mono text-gray-300">{photoPath}</span>
+                </p>
+              )}
             </div>
 
             <div>
-              <label className="block text-gray-300 mb-2">Categorias (múltipla seleção)</label>
-              <div className="bg-gray-700 border border-gray-600 rounded-lg p-3 max-h-48 overflow-y-auto">
-                {(() => {
-                  // Suporta ambos os formatos: array antigo ou objeto novo {groups, categories}
-                  const catGroups = Array.isArray(categories) ? [] : (categories?.groups || []);
-                  const allCats = Array.isArray(categories) ? categories.map(name => ({ name })) : (categories?.categories || []);
-                  if (catGroups.length === 0) {
-                    // Formato antigo (fallback): lista simples
-                    return allCats.map(cat => {
-                      const catName = typeof cat === 'string' ? cat : cat.name;
-                      return (
-                        <label key={catName} className="flex items-center space-x-2 py-2 cursor-pointer hover:bg-gray-600 px-2 rounded">
-                          <input
-                            type="checkbox"
-                            checked={Array.isArray(formData.categories) ? formData.categories.includes(catName) : false}
-                            onChange={(e) => {
-                              const currentCategories = Array.isArray(formData.categories) ? formData.categories : [];
-                              if (e.target.checked) {
-                                setFormData({ ...formData, categories: [...currentCategories, catName] });
-                              } else {
-                                setFormData({ ...formData, categories: currentCategories.filter(c => c !== catName) });
-                              }
-                            }}
-                            className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 rounded focus:ring-blue-500"
-                          />
-                          <span className="text-white min-w-0 break-words">{catName}</span>
-                        </label>
-                      );
-                    });
-                  }
-                  // Formato novo: agrupado por grupos
-                  return catGroups.map(group => {
+              <label className="block text-gray-300 mb-2 text-sm">Descrição</label>
+              <textarea
+                name="description"
+                value={formData.description}
+                onChange={handleChange}
+                rows="3"
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                placeholder="Notas sobre a foto..."
+              />
+            </div>
+            
+            
+            {/* Nome do ficheiro - SÓ em modo Add */}
+            {!isEditing && (
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm">Nome do ficheiro *</label>
+                <input
+                  type="text"
+                  name="imageUrl"
+                  value={formData.imageUrl}
+                  onChange={handleChange}
+                  placeholder="ex: foto.jpg"
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  💡 A foto será procurada na pasta da coleção selecionada
+                </p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm">Coleção *</label>
+                <select
+                  name="collection"
+                  value={formData.collection}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                >
+                  <option value="">Selecionar coleção...</option>
+                  {collections.map(col => (
+                    <option key={col.id} value={col.folderPath || col.id}>
+                      {col.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm">Local</label>
+                <input
+                  type="text"
+                  name="location"
+                  value={formData.location}
+                  onChange={handleChange}
+                  placeholder="ex: Porto, Portugal"
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Categorias */}
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm">Categorias</label>
+              {/*<div className="bg-gray-700 border border-gray-600 rounded-lg p-3 columns-1 sm:columns-2 lg:columns-3 gap-3">*/}
+                <div className="bg-gray-700 border border-gray-600 rounded-lg p-3 columns-1 sm:columns-2 lg:columns-4 gap-3">
+                {catGroups.length === 0 ? (
+                  // Formato antigo (array de strings)
+                  allCats.map(cat => {
+                    const catName = typeof cat === 'string' ? cat : cat.name;
+                    return (
+                      <label key={catName} className="flex items-center space-x-2 py-1.5 cursor-pointer hover:bg-gray-600 px-2 rounded break-inside-avoid">
+                        <input
+                          type="checkbox"
+                          checked={Array.isArray(formData.categories) ? formData.categories.includes(catName) : false}
+                          onChange={(e) => {
+                            const current = Array.isArray(formData.categories) ? formData.categories : [];
+                            if (e.target.checked) {
+                              setFormData({ ...formData, categories: [...current, catName] });
+                            } else {
+                              setFormData({ ...formData, categories: current.filter(c => c !== catName) });
+                            }
+                          }}
+                          className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 rounded focus:ring-blue-500"
+                        />
+                        <span className="text-white text-sm">{catName}</span>
+                      </label>
+                    );
+                  })
+                ) : (
+                  // Formato novo (com grupos) - distribui em 3 colunas sem partir grupos
+                  catGroups.map(group => {
                     const catsInGroup = allCats.filter(c => c.groupId === group.id);
                     if (catsInGroup.length === 0) return null;
                     return (
-                      <div key={group.id} className="mb-3">
-                        <div className="text-gray-400 text-xs font-semibold mb-1 px-2 sticky top-0 bg-gray-700 py-1">
+                      <div key={group.id} className="mb-2 break-inside-avoid">
+                        <div className="text-gray-400 text-xs font-semibold mb-1 px-2">
                           {group.icon} {group.name}
                         </div>
                         {catsInGroup.map(cat => (
-                          <label key={cat.name} className="flex items-center space-x-2 py-1.5 cursor-pointer hover:bg-gray-600 px-2 rounded">
+                          <label key={cat.name} className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-600 px-2 rounded">
                             <input
                               type="checkbox"
                               checked={Array.isArray(formData.categories) ? formData.categories.includes(cat.name) : false}
                               onChange={(e) => {
-                                const currentCategories = Array.isArray(formData.categories) ? formData.categories : [];
+                                const current = Array.isArray(formData.categories) ? formData.categories : [];
                                 if (e.target.checked) {
-                                  setFormData({ ...formData, categories: [...currentCategories, cat.name] });
+                                  setFormData({ ...formData, categories: [...current, cat.name] });
                                 } else {
-                                  setFormData({ ...formData, categories: currentCategories.filter(c => c !== cat.name) });
+                                  setFormData({ ...formData, categories: current.filter(c => c !== cat.name) });
                                 }
                               }}
                               className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 rounded focus:ring-blue-500"
                             />
-                            <span className="text-white min-w-0 break-words text-sm">{cat.name}</span>
+                            <span className="text-white text-sm">{cat.name}</span>
                           </label>
                         ))}
                       </div>
                     );
-                  });
-                })()}
+                  })
+                )}
               </div>
-              <p className="text-xs text-gray-500 mt-1">Selecione uma ou mais categorias</p>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 gap-4">
-            <div>
-              <label className="block text-gray-300 mb-2">Local</label>
+            
+
+            {/* Checkbox Favorita */}
+            <label className="flex items-center space-x-3 cursor-pointer bg-gray-900 p-3 rounded-lg border border-gray-700 hover:border-yellow-600 transition-colors">
               <input
-                type="text"
-                name="location"
-                value={formData.location}
+                type="checkbox"
+                name="isFavorite"
+                checked={formData.isFavorite}
                 onChange={handleChange}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-5 h-5 text-yellow-600 bg-gray-700 border-gray-600 rounded focus:ring-yellow-500"
               />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 xs:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-gray-300 mb-2">Data</label>
-              <input
-                type="date"
-                name="date"
-                value={formData.date}
-                readOnly
-                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-300 mb-2">Hora</label>
-              <input
-                type="text"
-                name="time"
-                value={formData.time}
-                readOnly
-                placeholder="hh:mm:ss"
-                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"
-              />
-            </div>
-          </div>
-
-          {/* DADOS TÉCNICOS BÁSICOS */}
-          <div className="border-t border-gray-700 pt-4 mt-4">
-            <h3 className="text-white font-semibold mb-3">Dados Técnicos Básicos</h3>
-            <div className="grid grid-cols-1 xs:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-gray-300 mb-2">Abertura (f/)</label>
-                <input
-                  type="text"
-                  name="aperture"
-                  value={formData.aperture}
-                  readOnly
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2">ISO</label>
-                <input
-                  type="text"
-                  name="iso"
-                  value={formData.iso}
-                  readOnly
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2">Velocidade</label>
-                <input
-                  type="text"
-                  name="shutterSpeed"
-                  value={formData.shutterSpeed}
-                  readOnly
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2">Distância Focal (mm)</label>
-                <input
-                  type="text"
-                  name="focalLength"
-                  value={formData.focalLength}
-                  readOnly
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* CONFIGURAÇÕES AVANÇADAS */}
-          <div className="border-t border-gray-700 pt-4 mt-4">
-            <h3 className="text-white font-semibold mb-3">Configurações Avançadas</h3>
-            <div className="grid grid-cols-1 xs:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-gray-300 mb-2">Modo de Exposição</label>
-                <input
-                  type="text"
-                  name="exposureMode"
-                  value={formData.exposureMode}
-                  readOnly
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2">Modo de Medição</label>
-                <input
-                  type="text"
-                  name="meteringMode"
-                  value={formData.meteringMode}
-                  readOnly
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2">Compensação EV</label>
-                <input
-                  type="text"
-                  name="exposureCompensation"
-                  value={formData.exposureCompensation}
-                  readOnly
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2">Balanço de Brancos</label>
-                <input
-                  type="text"
-                  name="whiteBalance"
-                  value={formData.whiteBalance}
-                  readOnly
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2">Modo de Focagem</label>
-                <input
-                  type="text"
-                  name="focusMode"
-                  value={formData.focusMode}
-                  readOnly
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2">Copyright</label>
-                <input
-                  type="text"
-                  name="copyright"
-                  value={formData.copyright}
-                  readOnly
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* GPS */}
-          {(formData.gpsLatitude || formData.gpsLongitude) && (
-            <div className="border-t border-gray-700 pt-4 mt-4">
-              <h3 className="text-white font-semibold mb-3">Localização GPS</h3>
-              <div className="grid grid-cols-1 gap-3">
-                {formData.gpsLatitude && (
-                  <div>
-                    <label className="block text-gray-300 mb-2">Latitude</label>
-                    <input
-                      type="text"
-                      name="gpsLatitude"
-                      value={formData.gpsLatitude}
-                      readOnly
-                      className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed font-mono text-base sm:text-sm"
-                    />
-                  </div>
-                )}
-                {formData.gpsLongitude && (
-                  <div>
-                    <label className="block text-gray-300 mb-2">Longitude</label>
-                    <input
-                      type="text"
-                      name="gpsLongitude"
-                      value={formData.gpsLongitude}
-                      readOnly
-                      className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed font-mono text-base sm:text-sm"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* EQUIPAMENTO */}
-          <div className="border-t border-gray-700 pt-4 mt-4">
-            <h3 className="text-white font-semibold mb-3">Equipamento</h3>
-            <div className="grid grid-cols-1 xs:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-gray-300 mb-2">Câmara</label>
-                <input
-                  type="text"
-                  name="camera"
-                  value={formData.camera}
-                  readOnly
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2">Lente</label>
-                <input
-                  type="text"
-                  name="lens"
-                  value={formData.lens}
-                  readOnly
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-gray-300 mb-2">Descrição</label>
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              rows="3"
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+              <span className="text-white flex items-center gap-2">
+                <span className="text-yellow-400 text-lg">⭐</span>
+                <span className="font-medium">Marcar como favorita</span>
+              </span>
+            </label>
           </div>
         </form>
         
-        <div className="flex gap-3 px-4 py-4 sm:p-6 short:py-3 border-t border-gray-700">
+        {/* Footer */}
+        <div className="flex gap-3 px-4 py-4 sm:p-6 border-t border-gray-700">
           <button
             onClick={onClose}
             className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
-            title="Cancelar"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -591,7 +323,6 @@ export default function AddEditModal({
           <button
             onClick={handleSubmit}
             className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
-            title={isEditing ? 'Guardar Alterações' : 'Adicionar Foto'}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />

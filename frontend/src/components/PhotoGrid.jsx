@@ -38,6 +38,11 @@ export default function PhotoGrid({ photos, onPhotoClick }) {
                 decoding="async"
                 className="w-full h-56 xs:h-auto xs:aspect-[4/3] object-cover group-hover:scale-105 transition-transform duration-300"
               />
+              {photo.orphaned && (
+                <span className="absolute left-2 top-2 rounded bg-yellow-500/90 px-2 py-1 text-xs font-semibold text-black">
+                  Sem coleção
+                </span>
+              )}
               {/* Título SOBRE a imagem REMOVIDO */}
             </div>
             <div className="p-3 sm:p-4">

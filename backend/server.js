@@ -29,7 +29,7 @@ const RCLONE_STATE = path.join(PRIVATE_DIR, 'rclone-state.json');
 const SESSION_SECRET_FILE = path.join(PRIVATE_DIR, 'session_secret');
 const LEGACY_RCLONE_CONF = process.env.LEGACY_RCLONE_CONF || path.join(path.dirname(PHOTOS_DIR), 'rclone.conf');
 const REMOTE_NAME = 'gdrive';
-
+const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || ''; // URL do Web App do Apps Script
 const DERIVED_DIR = path.resolve(process.env.DERIVED_DIR || path.join(path.dirname(PHOTOS_DIR), 'derivados'));
 const ORIGINAL_CACHE_DIR = path.resolve(process.env.ORIGINAL_CACHE_DIR || path.join(path.dirname(PHOTOS_DIR), 'cache-originais'));
 const ORIGINAL_CACHE_MB = Math.max(0, Number(process.env.ORIGINAL_CACHE_MB || 0) || 0);
@@ -338,6 +338,8 @@ function validatePhotoInput(body) {
   if (body.collection === null || body.collection === undefined || body.collection === '') photo.collection = null;
   else if (isValidFolderPath(String(body.collection))) photo.collection = String(body.collection);
   else return { error: 'Coleção inválida' };
+  photo.orphaned = photo.collection === null && body.orphaned === true;
+  if (body.pendingDriveDelete !== undefined) photo.pendingDriveDelete = !!body.pendingDriveDelete;
   if (body.categories !== undefined) {
     if (!Array.isArray(body.categories)) return { error: 'Categorias inválidas' };
     photo.categories = body.categories.filter(c => typeof c === 'string').map(c => cleanText(c, 100)).slice(0, 50);
@@ -362,6 +364,25 @@ function publicView(req, obj) {
   const copy = { ...obj };
   for (const f of GPS_FIELDS) delete copy[f];
   return copy;
+}
+
+function addUnassignedCollectionOrphans(orphans, collections, photos) {
+  const result = orphans.filter(orphan => orphan.reason !== 'no-photos');
+  for (const collection of collections) {
+    const folderPath = collection.folderPath || collection.id;
+    const hasAssignedPhotos = photos.some(photo =>
+      !photo.orphaned &&
+      (photo.collection === collection.id || photo.collection === folderPath)
+    );
+    if (!hasAssignedPhotos) {
+      result.push({
+        folderPath,
+        reason: 'no-photos',
+        message: 'Esta pasta não tem fotografias associadas a uma coleção no site. Os ficheiros continuam no Google Drive.'
+      });
+    }
+  }
+  return result;
 }
 
 // ========================================
@@ -461,33 +482,94 @@ app.put('/api/settings/active-collection', requireAdmin, async (req, res) => {
 });
 
 // ========================================
-// SCAN RECURSIVO DE PASTAS (2 níveis: mãe/filha)
+// SCAN DE ORFÃOS NO GOOGLE DRIVE
 // ========================================
+async function scanDriveOrphans(src) {
+  const orphans = [];
+  const result = await runRclone(['lsjson', '-R', src.remote, '--retries', '1'], src, 60 * 1000);
+  if (!result.ok) return orphans;
+
+  const items = JSON.parse(result.stdout || '[]');
+  const dirInfo = new Map();
+
+  for (const item of items) {
+    const parts = item.Path.split('/');
+    if (parts.length === 1 && !item.IsDir) continue;
+
+    if (item.IsDir) {
+      const path = parts.join('/');
+      if (!dirInfo.has(path)) dirInfo.set(path, { files: 0, subdirs: new Set() });
+      if (parts.length > 1) {
+        const parent = parts.slice(0, -1).join('/');
+        if (!dirInfo.has(parent)) dirInfo.set(parent, { files: 0, subdirs: new Set() });
+        dirInfo.get(parent).subdirs.add(parts[parts.length - 1]);
+      }
+    } else {
+      const parent = parts.slice(0, -1).join('/');
+      if (!dirInfo.has(parent)) dirInfo.set(parent, { files: 0, subdirs: new Set() });
+      dirInfo.get(parent).files++;
+    }
+  }
+
+  for (const [path, info] of dirInfo) {
+    const depth = path.split('/').length;
+    if (depth > 2) {
+      orphans.push({ folderPath: path, reason: 'too-deep', message: `Pasta tem subpastas além do nível permitido (2 níveis).` });
+    } else if (info.files > 0 && info.subdirs.size > 0) {
+      orphans.push({ folderPath: path, reason: 'mixed', message: `Pasta mistura fotos e subpastas. As fotos foram importadas, mas deve organizar a pasta.` });
+    } else if (info.files === 0 && info.subdirs.size === 0) {
+      orphans.push({ folderPath: path, reason: 'empty', message: `Pasta vazia no Drive.` });
+    }
+  }
+  return orphans;
+}
+
 async function scanFoldersRecursive(baseDir, maxDepth = 2, currentDepth = 0, currentPath = '') {
   const collections = [];
   const orphans = [];
-
   const items = await fs.readdir(baseDir, { withFileTypes: true }).catch(() => []);
-  const subdirs = items.filter(i => i.isDirectory() && !i.name.startsWith('.') && !i.name.startsWith('-'));
-  const files = items.filter(i => i.isFile() && /\.(jpe?g|png)$/i.test(i.name));
+  const subdirs = items.filter(item =>
+    item.isDirectory() &&
+    !item.name.startsWith('.') &&
+    !item.name.startsWith('-') &&
+    isValidCollectionName(item.name)
+  );
+  const files = items.filter(item => item.isFile() && media.IMAGE_RE.test(item.name));
 
-  if (subdirs.length > 0 && files.length > 0 && currentDepth > 0) {
-    orphans.push({ folderPath: currentPath, reason: 'mixed', message: `Pasta mistura fotos e subpastas. Organize: só fotos OU só subpastas.` });
+  if (currentDepth > 0 && files.length > 0 && subdirs.length > 0) {
+    orphans.push({
+      folderPath: currentPath,
+      reason: 'mixed',
+      message: 'Pasta mistura fotos e subpastas. Organize a pasta para sincronizar.'
+    });
   }
 
-  if (subdirs.length > 0 && currentDepth < maxDepth - 1) {
-    for (const subdir of subdirs) {
-      const subPath = currentPath ? `${currentPath}/${subdir.name}` : subdir.name;
-      const result = await scanFoldersRecursive(path.join(baseDir, subdir.name), maxDepth, currentDepth + 1, subPath);
-      collections.push(...result.collections);
-      orphans.push(...result.orphans);
-    }
-  } else if (files.length > 0) {
+  if (files.length > 0 && subdirs.length === 0 && currentDepth > 0) {
     collections.push({ folderPath: currentPath, name: currentPath.split('/').pop() });
-  } else if (subdirs.length === 0 && files.length === 0 && currentDepth > 0) {
-    orphans.push({ folderPath: currentPath, reason: 'empty', message: `Pasta vazia no Drive.` });
-  } else if (subdirs.length > 0 && currentDepth >= maxDepth - 1) {
-    orphans.push({ folderPath: currentPath, reason: 'too-deep', message: `Pasta tem subpastas além do nível permitido (2 níveis).` });
+  }
+
+  if (subdirs.length > 0) {
+    if (currentDepth >= maxDepth) {
+      orphans.push({
+        folderPath: currentPath,
+        reason: 'too-deep',
+        message: `Pasta tem subpastas além do nível permitido (${maxDepth} níveis).`
+      });
+    } else {
+      for (const subdir of subdirs) {
+        const folderPath = currentPath ? `${currentPath}/${subdir.name}` : subdir.name;
+        const result = await scanFoldersRecursive(
+          path.join(baseDir, subdir.name),
+          maxDepth,
+          currentDepth + 1,
+          folderPath
+        );
+        collections.push(...result.collections);
+        orphans.push(...result.orphans);
+      }
+    }
+  } else if (files.length === 0 && currentDepth > 0) {
+    orphans.push({ folderPath: currentPath, reason: 'empty', message: 'Pasta vazia.' });
   }
 
   return { collections, orphans };
@@ -500,48 +582,37 @@ async function scanFoldersRecursive(baseDir, maxDepth = 2, currentDepth = 0, cur
 async function listAvailableImages() {
   const images = new Map();
   const folders = new Set();
-  const orphans = [];
+  const src = await getRcloneSource();
+  const driveOrphans = src ? await scanDriveOrphans(src) : [];
 
-  // 1. Scan recursivo (detecta coleções + orfãos em simultâneo)
   const scanResult = await scanFoldersRecursive(PHOTOS_DIR, 2, 0, '');
-  orphans.push(...scanResult.orphans);
-
-  // 2. Formato antigo: fotos diretas em PHOTOS_DIR/<pasta>/ (só pastas-folha com fotos)
-  const items = await fs.readdir(PHOTOS_DIR, { withFileTypes: true }).catch(() => []);
-  for (const item of items) {
-    if (!item.isDirectory()) continue;
-    const folderName = item.name;
-    const files = await fs.readdir(path.join(PHOTOS_DIR, item.name)).catch(() => []);
-    const imageFiles = files.filter(f => /\.(jpe?g|png)$/i.test(f));
-    const allEntries = await fs.readdir(path.join(PHOTOS_DIR, item.name), { withFileTypes: true }).catch(() => []);
-    const hasSubdirs = allEntries.some(e => e.isDirectory());
-    if (imageFiles.length > 0 && !hasSubdirs) {
-      folders.add(folderName);
-      for (const file of imageFiles) {
-        images.set(`photos/${folderName}/${file}`, { col: folderName, file, exif: null, folderPath: folderName });
-      }
-    }
-  }
-
-  // 3. Formato novo: fotos em subpastas (2 níveis)
-  for (const col of scanResult.collections) {
-    folders.add(col.folderPath);
-    const colDir = path.join(PHOTOS_DIR, col.folderPath);
+  for (const { folderPath } of scanResult.collections) {
+    const colDir = path.join(PHOTOS_DIR, folderPath);
     const files = await fs.readdir(colDir).catch(() => []);
     for (const file of files) {
-      if (/\.(jpe?g|png)$/i.test(file)) {
-        images.set(`photos/${col.folderPath}/${file}`, { col: col.folderPath, file, exif: null, folderPath: col.folderPath });
+      if (media.IMAGE_RE.test(file)) {
+        images.set(`photos/${folderPath}/${file}`, {
+          col: folderPath,
+          file,
+          exif: null,
+          folderPath
+        });
       }
     }
+    folders.add(folderPath);
   }
 
-  // 4. Derivados (formato novo do media.js)
   for (const { col, file, entry } of media.listEntries()) {
     folders.add(col);
     images.set(`photos/${col}/${file}`, { col, file, exif: entry.exif || {}, folderPath: col });
   }
 
-  return { images, folders: [...folders], orphans };
+  const orphanMap = new Map();
+  for (const orphan of [...driveOrphans, ...scanResult.orphans]) {
+    orphanMap.set(`${orphan.folderPath}:${orphan.reason}`, orphan);
+  }
+
+  return { images, folders: [...folders], orphans: [...orphanMap.values()] };
 }
 
 // Atualiza collections.json e photos.json a partir das imagens disponíveis
@@ -549,9 +620,7 @@ async function listAvailableImages() {
 async function rebuildDatabase() {
   const { images, folders, orphans } = await listAvailableImages();
 
-  // Guardar orfãos
   const ORPHANS_FILE = path.join(DATA_DIR, 'orphans.json');
-  await fs.writeFile(ORPHANS_FILE, JSON.stringify(orphans, null, 2));
 
   // FASE 1: COLEÇÕES
   const collectionsData = await fs.readFile(COLLECTIONS_FILE, 'utf8');
@@ -661,7 +730,9 @@ async function rebuildDatabase() {
     if (info) {
       // Caminho atual ainda válido
       if (fillExif(photo, info.exif)) exifFilled++;
-      if (info.folderPath && photo.collection !== info.folderPath) {
+      if (photo.orphaned) {
+        photo.collection = null;
+      } else if (info.folderPath && photo.collection !== info.folderPath) {
         photo.collection = info.folderPath;
       }
       const correctTitle = info.file.replace(/\.[^.]+$/, '');
@@ -677,7 +748,11 @@ async function rebuildDatabase() {
     if (newMatch) {
       console.log(`📦 Foto movida: ${photo.title} [${photo.imageUrl} → ${newMatch.imageUrl}]`);
       photo.imageUrl = newMatch.imageUrl;
-      photo.collection = newMatch.info.col;
+      if (photo.orphaned) {
+        photo.collection = null;
+      } else {
+        photo.collection = newMatch.info.col;
+      }
       if (fillExif(photo, newMatch.info.exif)) exifFilled++;
       const correctTitle = newMatch.info.file.replace(/\.[^.]+$/, '');
       if (photo.title && photo.title.includes('/') && photo.title.endsWith('/' + correctTitle)) {
@@ -720,6 +795,8 @@ async function rebuildDatabase() {
   }
 
   await fs.writeFile(DATA_FILE, JSON.stringify(photos, null, 2));
+  const allOrphans = addUnassignedCollectionOrphans(orphans, collections, photos);
+  await fs.writeFile(ORPHANS_FILE, JSON.stringify(allOrphans, null, 2));
 
   return {
     success: true,
@@ -846,36 +923,132 @@ app.put('/api/collections/:id', requireAdmin, async (req, res) => {
   }
 });
 
-app.delete('/api/collections/:id', requireAdmin, async (req, res) => {
+// ========================================
+// ROTAS - ELIMINAR COLEÇÃO (com preservação de favoritas)
+// ========================================
+
+// Obter informações para eliminação (pasta + fotos favoritas)
+app.get('/api/collections/:id/delete-info', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const data = await fs.readFile(COLLECTIONS_FILE, 'utf8');
-    let collections = JSON.parse(data);
-    collections = collections.filter(c => c.id !== id);
-    await fs.writeFile(COLLECTIONS_FILE, JSON.stringify(collections, null, 2));
+    const collections = JSON.parse(data);
+    const col = collections.find(c => c.id === id);
+    if (!col) return res.status(404).json({ error: 'Coleção não encontrada' });
+    
+    // Proteger favoritas
+    if (col.id === 'favoritas' || col.folderPath === 'favoritas' || (col.name || '').toLowerCase() === 'favoritas') {
+      return res.status(400).json({ error: 'A coleção "favoritas" não pode ser eliminada.', protected: true });
+    }
+    
+    const folderPath = col.folderPath || col.id;
+    
+    // Obter fotos favoritas desta coleção
+    const photosData = await fs.readFile(DATA_FILE, 'utf8');
+    const photos = JSON.parse(photosData);
+    const colPhotos = photos.filter(p =>
+      p.collection === col.id ||
+      p.collection === col.folderPath ||
+      (p.orphaned && p.orphanedFromCollection === folderPath)
+    );
+    const favoritePhotos = colPhotos.filter(p => p.isFavorite);
+    
+    res.json({
+      id: col.id,
+      name: col.name,
+      folderPath,
+      totalPhotos: colPhotos.length,
+      favoritePhotos: favoritePhotos.map(p => ({
+        filename: p.imageUrl.split('/').pop(),
+        title: p.title
+      }))
+    });
+  } catch (error) {
+    console.error('Erro ao obter info de eliminação:', error);
+    res.status(500).json({ error: 'Erro ao obter informações' });
+  }
+});
 
+// Verificar se a pasta ainda existe no Drive
+app.get('/api/collections/:id/check-folder', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const data = await fs.readFile(COLLECTIONS_FILE, 'utf8');
+    const collections = JSON.parse(data);
+    const col = collections.find(c => c.id === id);
+    if (!col) return res.status(404).json({ error: 'Coleção não encontrada' });
+    
+    const folderPath = col.folderPath || col.id;
+    const src = await getRcloneSource();
+    if (!src) return res.status(409).json({ error: 'Drive não configurado' });
+    
+    const remotePath = joinRemote(src.remote, folderPath);
+    const result = await runRclone(['lsd', remotePath, '--retries', '1', '--contimeout', '10s'], src, 30 * 1000);
+    
+    res.json({ folderExists: result.ok });
+  } catch (error) {
+    console.error('Erro ao verificar pasta:', error);
+    res.status(500).json({ error: 'Erro ao verificar pasta' });
+  }
+});
+
+// Finalizar eliminação (sincronizar favoritas + limpar BD)
+app.post('/api/collections/:id/finalize-delete', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const data = await fs.readFile(COLLECTIONS_FILE, 'utf8');
+    const collections = JSON.parse(data);
+    const col = collections.find(c => c.id === id);
+    if (!col) return res.status(404).json({ error: 'Coleção não encontrada' });
+    
+    if (col.id === 'favoritas' || col.folderPath === 'favoritas' || (col.name || '').toLowerCase() === 'favoritas') {
+      return res.status(400).json({ error: 'A coleção "favoritas" não pode ser eliminada.' });
+    }
+    
+    const folderPath = col.folderPath || col.id;
+    
+    // 1. Verificar que a pasta já não existe no Drive
+    const src = await getRcloneSource();
+    if (!src) return res.status(409).json({ error: 'Drive não configurado' });
+    const remotePath = joinRemote(src.remote, folderPath);
+    const checkResult = await runRclone(['lsd', remotePath, '--retries', '1', '--contimeout', '10s'], src, 30 * 1000);
+    if (checkResult.ok) {
+      return res.status(400).json({ error: 'A pasta ainda existe no Drive. Mova as fotos favoritas e apague a pasta primeiro.' });
+    }
+    
+    // 2. Sincronizar favoritas (preserva metadados das fotos movidas)
+    try {
+      const syncStarted = await media.runSync('favoritas', rebuildDatabase);
+      await syncStarted.promise;
+    } catch (e) {
+      console.warn('Aviso: sincronização de favoritas falhou:', e.message);
+    }
+    
+    // 3. Remover a coleção da BD
+    const colsData2 = await fs.readFile(COLLECTIONS_FILE, 'utf8');
+    let collections2 = JSON.parse(colsData2);
+    collections2 = collections2.filter(c => c.id !== id);
+    await fs.writeFile(COLLECTIONS_FILE, JSON.stringify(collections2, null, 2));
+    
+    // 4. Limpar fotos órfãs (que ainda referenciam a coleção eliminada)
+    const photosData = await fs.readFile(DATA_FILE, 'utf8');
+    let photos = JSON.parse(photosData);
+    photos = photos.filter(p => p.collection !== id && p.collection !== folderPath);
+    await fs.writeFile(DATA_FILE, JSON.stringify(photos, null, 2));
+    
+    // 5. Limpar settings se a coleção ativa foi eliminada
     const settingsData = await fs.readFile(SETTINGS_FILE, 'utf8');
     const settings = JSON.parse(settingsData);
-    if (settings.activeCollection === id) {
+    if (settings.activeCollection === id || settings.activeCollection === folderPath) {
       settings.activeCollection = null;
       settings.lastUpdated = new Date();
       await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2));
     }
-
-    const photosData = await fs.readFile(DATA_FILE, 'utf8');
-    let photos = JSON.parse(photosData);
-    photos = photos.map(p => {
-      if (p.collection === id) {
-        return { ...p, collection: null };
-      }
-      return p;
-    });
-    await fs.writeFile(DATA_FILE, JSON.stringify(photos, null, 2));
-
-    console.log(`🗑️ Coleção eliminada: ${id}`);
-    res.json({ success: true });
+    
+    console.log(`🗑️ Coleção eliminada: ${col.name} [${folderPath}]`);
+    res.json({ success: true, message: `Coleção "${col.name}" eliminada com sucesso` });
   } catch (error) {
-    console.error('Erro ao eliminar coleção:', error);
+    console.error('Erro ao finalizar eliminação:', error);
     res.status(500).json({ error: 'Erro ao eliminar coleção' });
   }
 });
@@ -1079,8 +1252,10 @@ app.get('/api/photos', async (req, res) => {
     const data = await fs.readFile(DATA_FILE, 'utf8');
     let photos = JSON.parse(data);
 
-    photos = photos.map(photo => {
-      if (!photo.collection && photo.imageUrl) {
+    photos = photos
+      .filter(photo => !photo.pendingDriveDelete || getSession(req))
+      .map(photo => {
+      if (!photo.collection && !photo.orphaned && photo.imageUrl) {
         const pathParts = photo.imageUrl.split('/');
         // photos/<col>/<file> → col = pathParts[1]
         // photos/<mãe>/<filha>/<file> → col = pathParts[1] + '/' + pathParts[2]
@@ -1111,7 +1286,8 @@ app.post('/api/photos', requireAdmin, async (req, res) => {
     const newPhoto = {
       ...(existing || {}),
       ...body,
-      id: body.id || Date.now()
+      id: body.id || Date.now(),
+      ...(body.collection ? { orphaned: false, orphanedFromCollection: null } : {})
     };
 
     if (body.id !== undefined) {
@@ -1133,16 +1309,56 @@ app.delete('/api/photos/:id', requireAdmin, async (req, res) => {
   try {
     const photoId = String(req.params.id);
     const data = await fs.readFile(DATA_FILE, 'utf8');
-    let photos = JSON.parse(data);
+    const photos = JSON.parse(data);
+    const photo = photos.find(p => String(p.id) === photoId);
+    if (!photo) return res.status(404).json({ error: 'Fotografia não encontrada' });
 
-    photos = photos.filter(p => String(p.id) !== photoId);
+    const orphanedPhoto = {
+      ...photo,
+      categories: Array.isArray(photo.categories) ? [...photo.categories] : photo.categories,
+      category: photo.category,
+      collection: null,
+      orphaned: true,
+      orphanedFromCollection: photo.collection || photo.orphanedFromCollection || null
+    };
+    const updatedPhotos = photos.map(p =>
+      String(p.id) === photoId ? orphanedPhoto : p
+    );
+    await fs.writeFile(DATA_FILE, JSON.stringify(updatedPhotos, null, 2));
+
+    const collections = JSON.parse(await fs.readFile(COLLECTIONS_FILE, 'utf8'));
+    const ORPHANS_FILE = path.join(DATA_DIR, 'orphans.json');
+    let orphans = [];
+    try {
+      orphans = JSON.parse(await fs.readFile(ORPHANS_FILE, 'utf8'));
+    } catch {}
+    orphans = addUnassignedCollectionOrphans(orphans, collections, updatedPhotos);
+    await fs.writeFile(ORPHANS_FILE, JSON.stringify(orphans, null, 2));
+
+    console.log(`📂 Foto desvinculada da coleção e marcada como órfã: ${photo.title} (ID ${photoId})`);
+    res.json(publicView(req, { ...orphanedPhoto, ...media.urlsFor(orphanedPhoto.imageUrl) }));
+  } catch (error) {
+    console.error('Erro ao marcar fotografia como órfã:', error);
+    res.status(500).json({ error: 'Erro ao desvincular fotografia da coleção' });
+  }
+});
+
+app.post('/api/photos/:id/mark-drive-delete', requireAdmin, async (req, res) => {
+  try {
+    const photoId = String(req.params.id);
+    const photos = JSON.parse(await fs.readFile(DATA_FILE, 'utf8'));
+    const photo = photos.find(item => String(item.id) === photoId);
+    if (!photo) return res.status(404).json({ error: 'Fotografia não encontrada' });
+    if (!photo.orphaned || photo.collection) {
+      return res.status(409).json({ error: 'Só é possível marcar fotografias órfãs para apagar.' });
+    }
+
+    photo.pendingDriveDelete = true;
     await fs.writeFile(DATA_FILE, JSON.stringify(photos, null, 2));
-
-    console.log(`🗑️ Foto eliminada: ID ${photoId}`);
     res.json({ success: true });
   } catch (error) {
-    console.error('Erro ao eliminar foto:', error);
-    res.status(500).json({ error: 'Erro ao eliminar foto' });
+    console.error('Erro ao marcar fotografia para apagar do Drive:', error);
+    res.status(500).json({ error: 'Erro ao marcar fotografia para apagar' });
   }
 });
 
@@ -1468,7 +1684,8 @@ async function syncDrive(req, res, collectionName) {
 
   let started;
   try {
-    started = await media.runSync(collectionName, rebuildDatabase);
+    const allowEmpty = req.query['allow-empty'] === '1' && collectionName === null;
+    started = await media.runSync(collectionName, rebuildDatabase, undefined, { allowEmpty });
   } catch (error) {
     return res.status(409).json({ error: error.message, code: error.code, job: media.jobStatus() });
   }
@@ -1530,10 +1747,17 @@ app.post('/api/sync-drive-batch', requireAdmin, async (req, res) => {
 app.get('/api/orphans', requireAdmin, async (req, res) => {
   try {
     const ORPHANS_FILE = path.join(DATA_DIR, 'orphans.json');
-    const data = await fs.readFile(ORPHANS_FILE, 'utf8');
-    res.json(JSON.parse(data));
+    const [data, photosData, collectionsData] = await Promise.all([
+      fs.readFile(ORPHANS_FILE, 'utf8').catch(() => '[]'),
+      fs.readFile(DATA_FILE, 'utf8'),
+      fs.readFile(COLLECTIONS_FILE, 'utf8')
+    ]);
+    const orphans = JSON.parse(data);
+    const photos = JSON.parse(photosData);
+    const collections = JSON.parse(collectionsData);
+    res.json(addUnassignedCollectionOrphans(orphans, collections, photos));
   } catch {
-    res.json([]);
+    res.status(500).json({ error: 'Erro ao carregar pastas órfãs' });
   }
 });
 
@@ -1636,6 +1860,10 @@ app.post('/api/admin/database/:filename/restore', requireAdmin, async (req, res)
   }
 });
 
+// Rota para obter o URL do Apps Script (para o botão "Abrir Apps Script")
+app.get('/api/apps-script-url', requireAdmin, (req, res) => {
+  res.json({ url: APPS_SCRIPT_URL });
+});
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // ========================================

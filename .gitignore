@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 .env
+..dados_privados
 dados_privados
 backend/node_modules
 frontend/node_modules
@@ -16,8 +17,6 @@ frontend/node_modules
 backend/dist
 frontend/dist
 dist
-
-.env
 
 dist-ssr
 *.local

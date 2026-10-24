@@ -28,6 +28,7 @@ services:
       - SYNC_CONCURRENCY=${SYNC_CONCURRENCY:-3}
       - API_TARGET=http://localhost:3000
       - CHOKIDAR_USEPOLLING=true
+      - APPS_SCRIPT_URL=https://script.google.com/macros/s/AKfycbxg9YEa3AwzpICcYehZVENicOvnYIfA4NLRGEagkEXv9d4Omb1cIk3TAvIFuIkoMR4/exec
     volumes:
       - ./backend:/app/backend
       - ./frontend:/app/frontend

@@ -9,6 +9,7 @@ import AddEditModal from './components/AddEditModal'
 import AuthModal from './components/AuthModal'
 import ManageCollectionsModal from './components/ManageCollectionsModal'
 import ManageCategoriesModal from './components/ManageCategoriesModal'
+import ManageOrphansModal from './components/ManageOrphansModal'
 import BulkCategorizeModal from './components/BulkCategorizeModal'
 import RcloneSettingsModal from './components/RcloneSettingsModal'
 import DatabaseModal from './components/DatabaseModal'
@@ -32,6 +33,7 @@ export default function App() {
   const [filterCollection, setFilterCollection] = useState('all')
   const [showManageCollections, setShowManageCollections] = useState(false)
   const [showManageCategories, setShowManageCategories] = useState(false)
+  const [showManageOrphans, setShowManageOrphans] = useState(false)
   const [showManageMenu, setShowManageMenu] = useState(false)
   const [filterDate, setFilterDate] = useState('all')
   const [filterMonth, setFilterMonth] = useState('all')
@@ -171,11 +173,18 @@ export default function App() {
   }
 
   const handleDeletePhoto = async (id) => {
-    if (!window.confirm('Tem a certeza que deseja eliminar esta fotografia?')) return
+    if (!window.confirm('Desvincular esta fotografia da coleção? O ficheiro continuará no Google Drive.')) return
     try {
       const res = await apiFetch(`/api/photos/${id}`, { method: 'DELETE' })
-      if (!res.ok) return
-      setPhotos(prev => prev.filter(p => String(p.id) !== String(id)))
+      if (!res.ok) {
+        const data = await res.json()
+        alert(data.error || 'Erro ao desvincular fotografia')
+        return
+      }
+      const orphanedPhoto = await res.json()
+      setPhotos(prev => prev.map(p =>
+        String(p.id) === String(orphanedPhoto.id) ? orphanedPhoto : p
+      ))
       setSelectedPhoto(null)
       setShowFullscreen(false)
       loadCollections()
@@ -304,8 +313,9 @@ export default function App() {
     }
   }
 
-  const handleSyncDrive = async () => {
+  const handleSyncDrive = async (syncAllCollections = false) => {
     setShowManageMenu(false)
+
     try {
       const st = await apiFetch('/api/admin/rclone')
       if (!st.ok) return
@@ -320,29 +330,33 @@ export default function App() {
       return
     }
 
-    const selectedCollection = filterCollection
+    const selectedCollection = syncAllCollections ? 'all' : filterCollection
     const isAll = selectedCollection === 'all' || !selectedCollection
     
-    let colsToSync = []
     let syncQuestion = ''
     if (isAll) {
       syncQuestion = '☁️ Sincronizar TODAS as coleções com o Google Drive?'
     } else {
+      // Verifica se é pasta-mãe para informar o utilizador
       const subCols = collections.filter(c => c.folderPath && c.folderPath.startsWith(selectedCollection + '/'))
       if (subCols.length > 0) {
-        colsToSync = subCols.map(c => c.folderPath)
-        syncQuestion = `☁️ Sincronizar ${subCols.length} sub-coleções de "${selectedCollection}" com o Google Drive?`
+        syncQuestion = `☁️ Sincronizar a pasta-mãe "${selectedCollection}" e as suas ${subCols.length} sub-coleções conhecidas (e novas) com o Google Drive?`
       } else {
-        colsToSync = [selectedCollection]
         syncQuestion = `☁️ Sincronizar a coleção "${selectedCollection}" com o Google Drive?`
       }
     }
     
-    if (!window.confirm(syncQuestion + '\n\nSão criadas miniaturas e versões web das fotos novas ou alteradas. Os originais ficam no Drive.')) return
+    const syncDetails = syncAllCollections
+      ? '\n\nAs fotos e coleções apagadas no Drive também serão removidas da base de dados do site.'
+      : '\n\nSão criadas miniaturas e versões web das fotos novas ou alteradas. Os originais ficam no Drive.'
+    if (!window.confirm(syncQuestion + syncDetails)) return
 
     try {
-      const url = isAll ? '/api/sync-drive' : '/api/sync-drive-batch'
-      const body = isAll ? {} : { collectionNames: colsToSync }
+      // NOVA LÓGICA: usa a rota /api/sync-drive/:collectionName para pastas-mãe
+      const url = isAll
+        ? `/api/sync-drive${syncAllCollections ? '?allow-empty=1' : ''}`
+        : `/api/sync-drive/${encodeURIComponent(selectedCollection)}`
+      const body = {}
       const res = await apiFetch(url, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -360,7 +374,7 @@ export default function App() {
         }
         if (data.code === 'SYNC_RUNNING') {
           setSyncJob(data.job)
-          pollSyncJob()
+          await pollSyncJob()
           return
         }
         alert('❌ Erro: ' + (data.error || 'Falha na sincronização'))
@@ -368,11 +382,24 @@ export default function App() {
       }
 
       setSyncJob(data.job)
-      pollSyncJob()
+      await pollSyncJob()
     } catch (error) {
       alert('❌ Erro de ligação ao servidor durante a sincronização.')
       console.error(error)
     }
+  }
+
+  const handleFinalizeOrphans = async () => {
+    const response = await apiFetch('/api/sync-drive?allow-empty=1&wait=1', { method: 'POST' })
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(data.error || 'Não foi possível atualizar a base de dados a partir do Google Drive.')
+    }
+    if (data.job?.error) throw new Error(data.job.error)
+    if (!data.job?.db?.success) {
+      throw new Error('A sincronização terminou sem confirmar a atualização da base de dados.')
+    }
+    await loadInitialData()
   }
 
   const pollSyncJob = async () => {
@@ -404,11 +431,18 @@ export default function App() {
       message += `📸 Processadas: ${job.processed}\n`
       message += `⏭️ Sem alterações: ${job.skipped}\n`
       if (job.removed) message += `🗑️ Removidas do Drive: ${job.removed}\n`
-      if (job.failed?.length) message += `⚠️ Falhadas: ${job.failed.length}\n`
+      if (job.failed?.length) {
+        message += `⚠️ Falhadas: ${job.failed.length}\n`
+        message += job.failed.slice(0, 5).map(failure =>
+          `   • ${failure.file}: ${failure.error}`
+        ).join('\n')
+        if (job.failed.length > 5) message += `\n   • e mais ${job.failed.length - 5} ficheiro(s)`
+        message += '\n'
+      }
       if (job.processed) message += `\n💾 ${mb(job.bytesOriginal)} MB de originais → ${mb(job.bytesDerived)} MB no servidor`
       if (job.db) message += `\n\n📁 Coleções: ${job.db.collections.total} | Fotos: ${job.db.photos.total} (novas: ${job.db.photos.new})`
       alert(message)
-      loadInitialData()
+      await loadInitialData()
       return
     }
   }
@@ -418,6 +452,8 @@ export default function App() {
   // ========================================
 
   const filteredPhotos = photos.filter(photo => {
+    if (photo.pendingDriveDelete) return false
+
     const categoriesString = Array.isArray(photo.categories) 
       ? photo.categories.join(' ').toLowerCase() 
       : (photo.category || '').toLowerCase()
@@ -431,10 +467,15 @@ export default function App() {
                            (Array.isArray(photo.categories) && photo.categories.includes(filterCategory)) ||
                            photo.category === filterCategory
     
-    // Lógica de coleção: suporta pasta-mãe (mostra sub-coleções)
+    // Lógica de coleção: suporta pasta-mãe (mostra sub-coleções) + favoritas virtual
     let matchesCollection = false
     if (filterCollection === 'all') {
       matchesCollection = true
+    } else if (filterCollection === 'favoritas') {
+      // "favoritas" tem DUPla classificação:
+      // 1. Fotos fisicamente na pasta "favoritas" (collection === 'favoritas')
+      // 2. Fotos marcadas como favoritas noutras coleções (isFavorite === true)
+      matchesCollection = photo.collection === 'favoritas' || !!photo.isFavorite
     } else if (photo.collection === filterCollection) {
       matchesCollection = true
     } else if (photo.collection && photo.collection.startsWith(filterCollection + '/')) {
@@ -459,7 +500,14 @@ export default function App() {
   }, {})
 
   const photosPerCollection = collections.reduce((acc, col) => {
-    acc[col.id] = photos.filter(p => p.collection === col.id || p.collection === col.folderPath).length
+    if (col.id === 'favoritas' || col.folderPath === 'favoritas') {
+      // Favoritas: dupla classificação (físicas + virtuais marcadas)
+      acc[col.id] = photos.filter(p => 
+        p.collection === 'favoritas' || p.collection === col.folderPath || !!p.isFavorite
+      ).length
+    } else {
+      acc[col.id] = photos.filter(p => p.collection === col.id || p.collection === col.folderPath).length
+    }
     return acc
   }, {})
 
@@ -617,6 +665,12 @@ export default function App() {
                           className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
                         >
                           <span>🏷️</span><span>Gerir Categorias</span>
+                        </button>
+                        <button
+                          onClick={() => { setShowManageOrphans(true); setShowManageMenu(false) }}
+                          className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
+                        >
+                          <span>🧹</span><span>Gerir Fotos Órfãs</span>
                         </button>
                         <button
                           onClick={() => { setShowBulkCategorize(true); setShowManageMenu(false) }}
@@ -939,6 +993,19 @@ export default function App() {
           categories={categories}
           photos={photos}
           onCategoriesUpdate={handleCategoriesUpdate}
+        />
+      )}
+
+      {showManageOrphans && (
+        <ManageOrphansModal
+          isOpen={showManageOrphans}
+          onClose={() => setShowManageOrphans(false)}
+          photos={photos}
+          collections={collections}
+          onFinalize={handleFinalizeOrphans}
+          onPhotosChanged={async () => {
+            await Promise.all([loadPhotos(), loadCollections()])
+          }}
         />
       )}
 

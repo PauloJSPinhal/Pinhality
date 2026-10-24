@@ -3,6 +3,7 @@
 // ========================================
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../api';
+import DeleteCollectionModal from './DeleteCollectionModal';
 
 export default function ManageCollectionsModal({ 
   isOpen, 
@@ -20,6 +21,7 @@ export default function ManageCollectionsModal({
   const [editDescription, setEditDescription] = useState('');
   const [orphans, setOrphans] = useState([]);
   const [loadingOrphans, setLoadingOrphans] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null); // NOVO: para o modal de eliminação
 
   // Buscar orfãos quando o modal abre
   useEffect(() => {
@@ -103,23 +105,20 @@ export default function ManageCollectionsModal({
     }
   };
 
-  const handleDelete = async (col) => {
-    const msg = col.photoCount > 0
-      ? `Tem a certeza que deseja eliminar a coleção "${col.name}"?\n\n${col.photoCount} foto(s) ficará(ão) sem coleção.`
-      : `Tem a certeza que deseja eliminar a coleção "${col.name}"?`;
-    if (!window.confirm(msg)) return;
-    try {
-      const res = await apiFetch(`/api/collections/${encodeURIComponent(col.id)}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const err = await res.json();
-        alert(err.error || 'Erro ao eliminar coleção');
-        return;
-      }
-      onCollectionsUpdate();
-    } catch (error) {
-      console.error('Erro ao eliminar coleção:', error);
-      alert('Erro ao eliminar coleção');
+  // NOVO: Apenas abre o DeleteCollectionModal (deixa o trabalho pesado para ele)
+  const handleDelete = (col) => {
+    // Proteger favoritas
+    if (col.id === 'favoritas' || col.folderPath === 'favoritas' || (col.name || '').toLowerCase() === 'favoritas') {
+      alert('A coleção "favoritas" não pode ser eliminada.');
+      return;
     }
+    setDeleteTarget(col);
+  };
+
+  // NOVO: Callback quando a eliminação é concluída com sucesso
+  const handleDeleteComplete = () => {
+    setDeleteTarget(null);
+    onCollectionsUpdate();
   };
 
   const handleSetActive = (col) => {
@@ -288,11 +287,13 @@ export default function ManageCollectionsModal({
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className={`text-xs font-bold px-2 py-0.5 rounded ${
                         orphan.reason === 'empty' ? 'bg-gray-600 text-gray-300' :
+                        orphan.reason === 'no-photos' ? 'bg-yellow-500 text-black' :
                         orphan.reason === 'mixed' ? 'bg-red-600 text-white' :
                         orphan.reason === 'too-deep' ? 'bg-orange-600 text-white' :
                         'bg-yellow-600 text-black'
                       }`}>
                         {orphan.reason === 'empty' ? 'VAZIA' :
+                         orphan.reason === 'no-photos' ? 'SEM FOTOS ASSOCIADAS' :
                          orphan.reason === 'mixed' ? 'MISTA' :
                          orphan.reason === 'too-deep' ? 'PROFUNDIDADE' :
                          orphan.reason.toUpperCase()}
@@ -302,9 +303,11 @@ export default function ManageCollectionsModal({
                     <p className="text-gray-400 text-xs">{orphan.message}</p>
                   </div>
                 ))}
-                <p className="text-gray-500 text-xs mt-2">
-                  💡 Para resolver, organize as pastas no Google Drive: cada pasta deve conter OU só fotos OU só subpastas (máx 2 níveis).
-                </p>
+                {orphans.some(orphan => ['empty', 'mixed', 'too-deep'].includes(orphan.reason)) && (
+                  <p className="text-gray-500 text-xs mt-2">
+                    💡 Para resolver, organize as pastas no Google Drive: cada pasta deve conter OU só fotos OU só subpastas (máx 2 níveis).
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -319,6 +322,16 @@ export default function ManageCollectionsModal({
           </button>
         </div>
       </div>
+
+      {/* NOVO: Modal de Eliminação de Coleção */}
+      {deleteTarget && (
+        <DeleteCollectionModal
+          isOpen={!!deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          collection={deleteTarget}
+          onDeleted={handleDeleteComplete}
+        />
+      )}
     </div>
   );
 }

@@ -62,7 +62,7 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
             <img
               src={webSrc(photo)}
               alt={photo.title}
-              className="max-h-vd-60 sm:max-h-vd-70 short:max-h-vd-90 w-auto max-w-full h-auto object-contain cursor-zoom-in"
+              className="max-h-vd-70 sm:max-h-vd-80 short:max-h-vd-90 w-auto max-w-full h-auto object-contain cursor-zoom-in"
               onClick={() => onOpenFullscreen(photo)}
               title="Clique para ver em fullscreen"
             />
@@ -71,42 +71,9 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
           {/* Painel de Informações — SCROLL FUNCIONAL EM MOBILE */}
           {/* Paulo: no telemóvel o painel cresce e a página faz scroll (antes havia um scroll dentro de outro);
               só tem altura máxima quando está ao lado da imagem */}
-          <div className="bg-gray-800 rounded-lg p-4 sm:p-6 short:p-3 flex flex-col min-h-0 min-w-0 lg:max-h-vd-80 lg:overflow-y-auto short:max-h-vd-90 short:overflow-y-auto">
+          <div className="bg-gray-800 rounded-lg p-4 sm:p-6 short:p-3 flex flex-col min-h-0 min-w-0 lg:max-h-vd-85 lg:overflow-y-auto short:max-h-vd-90 short:overflow-y-auto">
             
-            {/* Botão Voltar — AGORA NO TOPO (entre a foto e o texto) */}
-            <button
-              onClick={onClose}
-              className="w-full mb-4 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center justify-center"
-              title="Voltar à Galeria"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              <span className="ml-2">Voltar à Galeria</span>
-            </button>
-
             <h2 className="text-xl font-bold text-white mb-3 break-words">{photo.title}</h2>
-
-            {/* Paulo: o detalhe mostra a versão web (~1600px); o original completo vem do Drive só se o pedirem */}
-            <div className="flex flex-wrap gap-2 mb-4">
-              {/* Paulo: "Ver original" abre o teu ecrã completo, centrado como antes, em vez de uma aba nova */}
-              <button
-                type="button"
-                onClick={() => onOpenFullscreen(photo)}
-                className="flex-auto px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center"
-                title="Ver o original em resolução completa"
-              >
-                🔍 Ver original{photo.width && photo.height ? ` (${photo.width}×${photo.height})` : ''}
-              </button>
-              <a
-                href={originalSrc(photo, true)}
-                download
-                className="flex-auto px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center inline-flex items-center justify-center"
-                title="Descarregar o original"
-              >
-                ⬇️ Descarregar{photo.originalSize ? ` (${(photo.originalSize / 1024 / 1024).toFixed(1)} MB)` : ''}
-              </a>
-            </div>
 
             {photo.description && (
               <p className="text-gray-300 mb-4 break-words">{photo.description}</p>
@@ -134,7 +101,7 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
               </div>
             )}
 
-            {/* Dados Técnicos */}
+            {/* Dados Técnicos Básicos */}
             {(photo.aperture || photo.iso || photo.shutterSpeed || photo.focalLength) && (
               <div className="mb-4 pb-4 border-b border-gray-700">
                 <h3 className="text-white font-semibold mb-3 flex items-center">
@@ -148,20 +115,6 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
                   {photo.iso && <div><span className="text-gray-400">ISO:</span> <p className="text-white break-words">{photo.iso}</p></div>}
                   {photo.shutterSpeed && <div><span className="text-gray-400">Velocidade:</span> <p className="text-white break-words">{photo.shutterSpeed}</p></div>}
                   {photo.focalLength && <div><span className="text-gray-400">Focal:</span> <p className="text-white break-words">{photo.focalLength}mm</p></div>}
-                </div>
-              </div>
-            )}
-
-            {/* Configurações Avançadas */}
-            {(photo.exposureMode || photo.meteringMode || photo.exposureCompensation || photo.whiteBalance || photo.focusMode) && (
-              <div className="mb-4 pb-4 border-b border-gray-700">
-                <h3 className="text-white font-semibold mb-3">Configurações Avançadas</h3>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  {photo.exposureMode && <div><span className="text-gray-400">Modo de Exposição:</span> <p className="text-white break-words">{photo.exposureMode}</p></div>}
-                  {photo.meteringMode && <div><span className="text-gray-400">Modo de Medição:</span> <p className="text-white break-words">{photo.meteringMode}</p></div>}
-                  {photo.exposureCompensation && <div><span className="text-gray-400">Compensação EV:</span> <p className="text-white break-words">{photo.exposureCompensation}</p></div>}
-                  {photo.whiteBalance && <div><span className="text-gray-400">Balanço de Brancos:</span> <p className="text-white break-words">{photo.whiteBalance}</p></div>}
-                  {photo.focusMode && <div><span className="text-gray-400">Modo de Focagem:</span> <p className="text-white break-words">{photo.focusMode}</p></div>}
                 </div>
               </div>
             )}
@@ -191,19 +144,55 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
               </div>
             )}
 
+            {/* Copyright */}
             {photo.copyright && (
               <div className="mb-4 pb-4 border-b border-gray-700">
-                <h3 className="text-white font-semibold mb-2">Copyright</h3>
-                <p className="text-gray-300 text-sm">{photo.copyright}</p>
+                <h3 className="text-white font-semibold mb-2">© Copyright</h3>
+                <p className="text-gray-300 text-sm break-words">{photo.copyright}</p>
               </div>
             )}
 
-            {/* Empurrar botões para o fundo */}
-            <div className="flex-1"></div>
 
-            {/* Botões de ação (Editar / Eliminar) */}
+            {/* Botão Voltar — AGORA NO TOPO (entre a foto e o texto) */}
+            <button
+              onClick={onClose}
+              className="w-full mb-4 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center justify-center"
+              title="Voltar à Galeria"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              <span className="ml-2">Voltar à Galeria</span>
+            </button>
+
+            
+
+            {/* Paulo: o detalhe mostra a versão web (~1600px); o original completo vem do Drive só se o pedirem */}
+            <div className="flex flex-wrap gap-2 mb-4">
+              {/* Paulo: "Ver original" abre o teu ecrã completo, centrado como antes, em vez de uma aba nova */}
+              <button
+                type="button"
+                onClick={() => onOpenFullscreen(photo)}
+                className="flex-auto px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center"
+                title="Ver o original em resolução completa"
+              >
+                🔍 Ver original{photo.width && photo.height ? ` (${photo.width}×${photo.height})` : ''}
+              </button>
+              <a
+                href={originalSrc(photo, true)}
+                download
+                className="flex-auto px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center inline-flex items-center justify-center"
+                title="Descarregar o original"
+              >
+                ⬇️ Descarregar{photo.originalSize ? ` (${(photo.originalSize / 1024 / 1024).toFixed(1)} MB)` : ''}
+              </a>
+            </div>
+
+
+
+            {/* Botões de ação (Editar / Eliminar) — sempre na parte inferior */}
             {authenticated && (
-              <div className="flex gap-2 pt-3">
+              <div className="flex gap-2 pt-3 mt-auto">
                 <button
                   onClick={onEdit}
                   className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg flex items-center justify-center"
@@ -225,7 +214,7 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
                   <span className="ml-2 hidden sm:inline">Eliminar</span>
                 </button>
               </div>
-            )}
+            )}  
           </div>
         </div>
       </div>
