@@ -95,6 +95,24 @@ o ecrã abre automaticamente para as introduzir.
 A sincronização corre em segundo plano e o progresso aparece no canto do ecrã. No fim, a base de dados
 é atualizada automaticamente.
 
+Pastas-mãe com subcoleções (por exemplo, `passeios/teste_2`) são contentores, não coleções:
+as fotos pertencem à pasta onde estão guardadas, e a coleção mantém o caminho completo. Sincronizar
+uma pasta-mãe inclui as respetivas subcoleções.
+
+### Gerir fotos órfãs e apagar coleções
+
+Em **Gerir → Gerir Fotos Órfãs**, as fotos órfãs podem ser restauradas para a coleção que corresponde
+à pasta atual no Drive ou marcadas para eliminação. O modal apresenta o JSON para o Apps Script e os
+botões **Cancelar**, **Copiar JSON**, **Abrir Apps Script** e **Concluir**. Copia o JSON, executa-o no
+Apps Script e só depois clica em **Concluir**. Esse passo sincroniza todas as pastas com o Drive e
+atualiza a base de dados; fotos e coleções que já não existam são removidas antes de o modal fechar.
+Se a sincronização ou a atualização falhar, o modal permanece aberto e apresenta o erro.
+
+O modal **Eliminar Coleção** segue o mesmo fluxo e a mesma ordem de botões. O JSON move primeiro as
+fotos favoritas para `favoritas` e pede ao Apps Script para apagar a pasta da coleção. Depois de
+executar o script, **Concluir** verifica que a pasta deixou de existir e finaliza a remoção da coleção
+e das referências às fotos.
+
 ## Miniaturas, versões web e originais
 
 Para poupar espaço, o servidor **não guarda os originais**. Em cada sincronização, para cada imagem do Drive
@@ -106,8 +124,11 @@ Para poupar espaço, o servidor **não guarda os originais**. Em cada sincroniza
 3. gera uma miniatura WebP de ~400 px (grelha) e uma versão WebP de ~1600 px (detalhe e ecrã inteiro);
 4. apaga o original temporário.
 
-Fotos sem alterações no Drive (mesmo hash/tamanho/data) são saltadas; fotos apagadas do Drive perdem as
-miniaturas e saem do site. Se o Drive não devolver nenhuma pasta, nada é apagado.
+Fotos sem alterações no Drive (mesmo hash/tamanho/data) são saltadas. Quando uma foto desaparece do Drive,
+a sincronização remove as miniaturas, a entrada do manifesto, eventuais originais locais antigos e a
+referência da foto na base de dados. Uma sincronização normal protege contra uma listagem vazia da raiz;
+o fluxo explícito de **Concluir** em Gerir Fotos Órfãs permite confirmar uma raiz vazia após executar o
+JSON no Apps Script.
 
 O **original** em resolução completa abre-se no detalhe da foto (**Ver original** / **Descarregar**) e vem do Drive
 a pedido (`/photos/original/<coleção>/<ficheiro>`). Com `ORIGINAL_CACHE_MB` os originais pedidos ficam em cache
