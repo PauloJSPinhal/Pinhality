@@ -305,7 +305,7 @@ setInterval(() => {
 // VALIDAÇÃO DOS DADOS RECEBIDOS
 // ========================================
 const PHOTO_TEXT_FIELDS = {
-  title: 300, location: 300, description: 5000, date: 10, time: 8,
+  title: 300, location: 300, description: 5000, peopleNotes: 2000, date: 10, time: 8,
   aperture: 20, iso: 20, shutterSpeed: 20, focalLength: 20, camera: 200, lens: 200,
   exposureMode: 100, meteringMode: 100, exposureCompensation: 30, whiteBalance: 100, focusMode: 100,
   copyright: 300, gpsLatitude: 100, gpsLongitude: 100
@@ -317,12 +317,22 @@ function cleanText(value, max) {
   return String(value).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').slice(0, max);
 }
 
+function normalizePeopleNotes(value) {
+  return cleanText(value, 2000)
+    .split(',')
+    .map(name => name.replace(/^[#\s]+/, '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .map(name => `#${name}`)
+    .join(', ');
+}
+
 function validatePhotoInput(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'Dados inválidos' };
   const photo = {};
   for (const [field, max] of Object.entries(PHOTO_TEXT_FIELDS)) {
     if (body[field] !== undefined) photo[field] = cleanText(body[field], max);
   }
+  if (photo.peopleNotes !== undefined) photo.peopleNotes = normalizePeopleNotes(photo.peopleNotes);
   if (!photo.title || !photo.title.trim()) return { error: 'O título é obrigatório' };
   const url = String(body.imageUrl || '');
   const parts = url.split('/');
@@ -359,10 +369,17 @@ function validCategoryName(name) {
   return typeof name === 'string' && name.trim().length > 0 && name.length <= 100 && !/[\u0000-\u001f\u007f]/.test(name);
 }
 
+function normalizeCategoryName(name) {
+  return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('pt-PT');
+}
+
 function publicView(req, obj) {
-  if (SHOW_GPS || getSession(req)) return obj;
+  if (getSession(req)) return obj;
   const copy = { ...obj };
-  for (const f of GPS_FIELDS) delete copy[f];
+  delete copy.peopleNotes;
+  if (!SHOW_GPS) {
+    for (const f of GPS_FIELDS) delete copy[f];
+  }
   return copy;
 }
 
@@ -1302,6 +1319,103 @@ app.get('/api/photos', async (req, res) => {
   } catch (error) {
     console.error('Erro ao ler fotos:', error);
     res.status(500).json({ error: 'Erro ao ler fotos' });
+  }
+});
+
+app.post('/api/photos/import-classifications', requireAdmin, async (req, res) => {
+  try {
+    const items = req.body?.items;
+    if (!Array.isArray(items) || items.length === 0 || items.length > 500) {
+      return res.status(400).json({ error: 'A importação tem de conter entre 1 e 500 classificações.' });
+    }
+
+    const [photosData, categoriesData] = await Promise.all([
+      fs.readFile(DATA_FILE, 'utf8'),
+      fs.readFile(CATEGORIES_FILE, 'utf8')
+    ]);
+    let photos = JSON.parse(photosData);
+    const categories = JSON.parse(categoriesData);
+    if (!Array.isArray(photos) || !Array.isArray(categories.categories)) {
+      throw new Error('Os dados de fotografias ou categorias têm um formato inválido.');
+    }
+
+    const categoriesByName = new Map(categories.categories
+      .filter(category => typeof category.name === 'string')
+      .map(category => [normalizeCategoryName(category.name), category.name]));
+    const photoIds = new Set();
+    const updates = [];
+
+    for (const item of items) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        return res.status(400).json({ error: 'A importação contém um registo inválido.' });
+      }
+      if (!(typeof item.photoId === 'string' || (typeof item.photoId === 'number' && Number.isFinite(item.photoId)))) {
+        return res.status(400).json({ error: 'Um registo não identifica uma fotografia válida.' });
+      }
+
+      const photoId = String(item.photoId);
+      if (photoIds.has(photoId)) {
+        return res.status(400).json({ error: 'A mesma fotografia não pode aparecer mais do que uma vez na importação.' });
+      }
+      photoIds.add(photoId);
+      const photo = photos.find(candidate => String(candidate.id) === photoId);
+      if (!photo) return res.status(400).json({ error: `A fotografia ${photoId} já não existe. Atualize a página e reveja a importação.` });
+
+      if (typeof item.title !== 'string' || item.title.length > 300) {
+        return res.status(400).json({ error: `O título da fotografia "${photo.title || photoId}" é inválido (máximo 300 caracteres).` });
+      }
+      const title = cleanText(item.title, 300).trim();
+      if (!title) return res.status(400).json({ error: `O título da fotografia "${photo.title || photoId}" não pode ficar vazio.` });
+      if (typeof item.description !== 'string' || item.description.length > 5000) {
+        return res.status(400).json({ error: `A descrição da fotografia "${photo.title || photoId}" é inválida (máximo 5000 caracteres).` });
+      }
+      if (!Array.isArray(item.categories) || item.categories.length > 50) {
+        return res.status(400).json({ error: `As categorias da fotografia "${photo.title || photoId}" são inválidas.` });
+      }
+
+      const mappedCategories = [];
+      for (const categoryName of item.categories) {
+        if (typeof categoryName !== 'string' || !categoryName.trim()) {
+          return res.status(400).json({ error: `Há uma categoria vazia ou inválida na fotografia "${photo.title || photoId}".` });
+        }
+        const mapped = categoriesByName.get(normalizeCategoryName(categoryName));
+        if (!mapped) {
+          return res.status(400).json({ error: `A categoria "${categoryName}" não existe.` });
+        }
+        if (mappedCategories.includes(mapped)) {
+          return res.status(400).json({ error: `A categoria "${mapped}" está repetida na fotografia "${photo.title || photoId}".` });
+        }
+        mappedCategories.push(mapped);
+      }
+
+      updates.push({
+        ...photo,
+        title,
+        description: cleanText(item.description, 5000),
+        categories: mappedCategories
+      });
+    }
+
+    const updatedById = new Map(updates.map(photo => [String(photo.id), photo]));
+    photos = photos.map(photo => updatedById.get(String(photo.id)) || photo);
+    const temporaryFile = `${DATA_FILE}.${crypto.randomUUID()}.tmp`;
+    try {
+      await fs.writeFile(temporaryFile, JSON.stringify(photos, null, 2), { flag: 'wx' });
+      await fs.rename(temporaryFile, DATA_FILE);
+    } catch (error) {
+      try {
+        await fs.unlink(temporaryFile);
+      } catch (cleanupError) {
+        if (cleanupError.code !== 'ENOENT') console.error('Erro ao limpar ficheiro temporário de importação:', cleanupError);
+      }
+      throw error;
+    }
+
+    console.log(`✅ Classificações importadas: ${updates.length} fotografia(s)`);
+    res.json({ imported: updates.length, photos: updates.map(photo => publicView(req, { ...photo, ...media.urlsFor(photo.imageUrl) })) });
+  } catch (error) {
+    console.error('Erro ao importar classificações:', error);
+    res.status(500).json({ error: 'Erro ao importar classificações.' });
   }
 });
 

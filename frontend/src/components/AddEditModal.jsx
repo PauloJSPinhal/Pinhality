@@ -4,6 +4,13 @@
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../api';
 
+const normalizePeopleNotes = (value) => String(value || '')
+  .split(',')
+  .map(name => name.replace(/^[#\s]+/, '').replace(/\s+/g, ' ').trim())
+  .filter(Boolean)
+  .map(name => `#${name}`)
+  .join(', ');
+
 export default function AddEditModal({ 
   isOpen, 
   onClose, 
@@ -28,6 +35,7 @@ export default function AddEditModal({
     camera: '',
     lens: '',
     description: '',
+    peopleNotes: '',
     isFavorite: false
   });
 
@@ -52,6 +60,7 @@ export default function AddEditModal({
         description: initialData.description === 'Adicionada automaticamente - editar para completar'
           ? ''
           : initialData.description || '',
+        peopleNotes: initialData.peopleNotes || '',
         isFavorite: !!initialData.isFavorite
       });
     } else {
@@ -70,6 +79,7 @@ export default function AddEditModal({
         camera: '',
         lens: '',
         description: '',
+        peopleNotes: '',
         isFavorite: false
       });
     }
@@ -104,6 +114,7 @@ export default function AddEditModal({
     
     onSave({
       ...formData,
+      peopleNotes: normalizePeopleNotes(formData.peopleNotes),
       imageUrl: finalImageUrl,
       timestamp: Date.now()
     });
@@ -175,6 +186,24 @@ export default function AddEditModal({
                 className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                 placeholder="Notas sobre a foto..."
               />
+            </div>
+
+            <div>
+              <label className="block text-gray-300 mb-2 text-sm" htmlFor="peopleNotes">Pessoas identificadas (privado)</label>
+              <textarea
+                id="peopleNotes"
+                name="peopleNotes"
+                value={formData.peopleNotes}
+                onChange={handleChange}
+                onBlur={() => setFormData(prev => ({ ...prev, peopleNotes: normalizePeopleNotes(prev.peopleNotes) }))}
+                rows="2"
+                maxLength={2000}
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                placeholder="#Paulo Pinhal, #Joana Vasconcelos"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                Use # antes de cada nome e separe vários nomes por vírgula. Esta informação só é visível na gestão e serve para pesquisar.
+              </p>
             </div>
             
             

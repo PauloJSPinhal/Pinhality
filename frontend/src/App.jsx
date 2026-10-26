@@ -11,21 +11,37 @@ import ManageCollectionsModal from './components/ManageCollectionsModal'
 import ManageCategoriesModal from './components/ManageCategoriesModal'
 import ManageOrphansModal from './components/ManageOrphansModal'
 import BulkCategorizeModal from './components/BulkCategorizeModal'
+import ImportClassificationsModal from './components/ImportClassificationsModal'
 import RcloneSettingsModal from './components/RcloneSettingsModal'
 import DatabaseModal from './components/DatabaseModal'
 import HelpModal from './components/HelpModal'
 import { apiFetch, UNAUTHORIZED_EVENT } from './api'
 
-const matchesSearch = (photo, searchTerm) => {
-  const search = searchTerm.toLowerCase()
-  const categoriesString = Array.isArray(photo.categories)
-    ? photo.categories.join(' ').toLowerCase()
-    : (photo.category || '').toLowerCase()
+const normalizeSearchText = (value) => String(value || '')
+  .trim()
+  .replace(/\s+/g, ' ')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLocaleLowerCase('pt-PT')
 
-  return (photo.title || '').toLowerCase().includes(search) ||
-    categoriesString.includes(search) ||
-    (photo.location || '').toLowerCase().includes(search) ||
-    (photo.description || '').toLowerCase().includes(search)
+const matchesSearch = (photo, searchTerm, includePrivate = false) => {
+  const search = normalizeSearchText(searchTerm).replace(/^#+\s*/, '')
+  if (!search) return true
+  const categoriesString = Array.isArray(photo.categories)
+    ? photo.categories.join(' ')
+    : (photo.category || '')
+
+  return normalizeSearchText(photo.title).includes(search) ||
+    normalizeSearchText(categoriesString).includes(search) ||
+    normalizeSearchText(photo.location).includes(search) ||
+    normalizeSearchText(photo.description).includes(search) ||
+    (includePrivate && normalizeSearchText(photo.peopleNotes).replace(/#/g, '').includes(search))
+}
+
+const hidePrivatePeopleNotes = (photo) => {
+  const sanitized = { ...photo }
+  delete sanitized.peopleNotes
+  return sanitized
 }
 
 const matchesCategory = (photo, filterCategory) =>
@@ -70,6 +86,7 @@ export default function App() {
   const [sortBy, setSortBy] = useState('date')
   const [sortOrder, setSortOrder] = useState('desc')
   const [showBulkCategorize, setShowBulkCategorize] = useState(false)
+  const [showImportClassifications, setShowImportClassifications] = useState(false)
   const [showRcloneSettings, setShowRcloneSettings] = useState(false)
   const [showDatabaseModal, setShowDatabaseModal] = useState(false)
   const [rcloneReason, setRcloneReason] = useState('')
@@ -79,11 +96,16 @@ export default function App() {
     loadInitialData()
     fetch('/api/session')
       .then(res => res.json())
-      .then(data => setAuthenticated(!!data.authenticated))
+      .then(data => {
+        const isAuthenticated = !!data.authenticated
+        setAuthenticated(isAuthenticated)
+        if (isAuthenticated) loadPhotos()
+      })
       .catch(() => {})
 
     const onUnauthorized = () => {
       setAuthenticated(false)
+      setPhotos(current => current.map(hidePrivatePeopleNotes))
       setShowAuthModal(true)
     }
     window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
@@ -97,7 +119,13 @@ export default function App() {
       console.error('Erro ao terminar sessão:', error)
     }
     setAuthenticated(false)
+    setPhotos(current => current.map(hidePrivatePeopleNotes))
     setShowManageMenu(false)
+  }
+
+  const handleLogin = () => {
+    setAuthenticated(true)
+    loadPhotos()
   }
 
   const openRcloneSettings = (reason = '') => {
@@ -317,6 +345,22 @@ export default function App() {
     }
   }
 
+  const handleImportClassifications = async (items) => {
+    const res = await apiFetch('/api/photos/import-classifications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items })
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `Erro ao importar classificações (HTTP ${res.status}).`)
+    if (!Array.isArray(data.photos) || data.imported !== items.length) {
+      throw new Error('O servidor devolveu uma confirmação incompleta; verifique as fotografias antes de repetir a importação.')
+    }
+    const updatedPhotos = new Map(data.photos.map(photo => [String(photo.id), photo]))
+    setPhotos(prev => prev.map(photo => updatedPhotos.get(String(photo.id)) || photo))
+    return data.imported
+  }
+
   const handleSync = async () => {
     setShowManageMenu(false)
     if (window.confirm('🔄 Sincronizar pastas e fotos?\n\n• Cria coleções para pastas novas\n• Remove coleções de pastas eliminadas\n• Adiciona fotos novas automaticamente\n• Remove fotos de ficheiros eliminados')) {
@@ -486,10 +530,10 @@ export default function App() {
 
   const preFilteredPhotos = useMemo(() => photos.filter(photo =>
     !photo.pendingDriveDelete &&
-    matchesSearch(photo, searchTerm) &&
+    matchesSearch(photo, searchTerm, authenticated) &&
     matchesCategory(photo, filterCategory) &&
     matchesCollection(photo, filterCollection)
-  ), [photos, searchTerm, filterCategory, filterCollection])
+  ), [photos, searchTerm, filterCategory, filterCollection, authenticated])
 
   const availableDates = useMemo(() => preFilteredPhotos.reduce((acc, photo) => {
     if (photo.date && photo.date.length >= 4) {
@@ -533,13 +577,13 @@ export default function App() {
     const matchesMonth = filterDate === 'all' || filterMonth === 'all' ||
       (matchesDate && photo.date && photo.date.substring(5, 7) === filterMonth)
     const matchesLocation = filterLocation === 'all' || photo.location === filterLocation
-    return matchesSearch(photo, searchTerm) &&
+    return matchesSearch(photo, searchTerm, authenticated) &&
       matchesCategory(photo, filterCategory) &&
       matchesCollection(photo, filterCollection) &&
       matchesDate &&
       matchesMonth &&
       matchesLocation
-  }), [photos, searchTerm, filterCategory, filterCollection, filterDate, filterMonth, filterLocation])
+  }), [photos, searchTerm, filterCategory, filterCollection, filterDate, filterMonth, filterLocation, authenticated])
 
   const categoryNames = (categories && categories.categories ? categories.categories : []).map(c => c.name)
   
@@ -713,6 +757,12 @@ export default function App() {
                           className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
                         >
                           <span>⚡</span><span>Categorização Rápida</span>
+                        </button>
+                        <button
+                          onClick={() => { setShowImportClassifications(true); setShowManageMenu(false) }}
+                          className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
+                        >
+                          <span>📥</span><span>Importar Classificações</span>
                         </button>
                         <button
                           onClick={handleSyncDrive}
@@ -1068,7 +1118,7 @@ export default function App() {
 
       {showAuthModal && (
         <AuthModal 
-          onLogin={() => setAuthenticated(true)}
+          onLogin={handleLogin}
           onClose={() => setShowAuthModal(false)}
         />
       )}
@@ -1129,6 +1179,16 @@ export default function App() {
           categoriesData={categories}
           onUpdatePhoto={handleBulkUpdatePhoto}
           onRefresh={loadPhotos}
+        />
+      )}
+
+      {showImportClassifications && (
+        <ImportClassificationsModal
+          isOpen={showImportClassifications}
+          onClose={() => setShowImportClassifications(false)}
+          photos={photos}
+          categories={categories.categories || []}
+          onImport={handleImportClassifications}
         />
       )}
     </div>

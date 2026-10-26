@@ -47,7 +47,8 @@ COPY backend/server.js backend/media.js ./
 # Falha o build se o sharp não carregar nesta imagem
 RUN node -e "const s=require('sharp'); console.log('sharp', s.versions.sharp, 'libvips', s.versions.vips)"
 # Os JSON do repositório servem de dados iniciais quando o volume /data está vazio
-COPY backend/photos.json backend/collections.json backend/categories.json backend/settings.json ./seed/
+COPY backend/photos.json backend/collections.json backend/settings.json ./seed/
+COPY backend/seed/categories.json ./seed/categories.json
 COPY --from=frontend-build /src/dist ./public
 COPY scripts/entrypoint.sh /usr/local/bin/pinhality-entrypoint
 # Paulo: as pastas dos volumes pertencem ao utilizador node, para que volumes novos já nasçam com o dono certo
