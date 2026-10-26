@@ -9,6 +9,8 @@ export default function DeleteCollectionModal({ isOpen, onClose, collection, onD
   const [info, setInfo] = useState(null);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [jsonCopied, setJsonCopied] = useState(false);
+  const [appsScriptOpened, setAppsScriptOpened] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeError, setFinalizeError] = useState('');
   const [appsScriptUrl, setAppsScriptUrl] = useState('');
@@ -19,6 +21,8 @@ export default function DeleteCollectionModal({ isOpen, onClose, collection, onD
     setError('');
     setFinalizeError('');
     setCopied(false);
+    setJsonCopied(false);
+    setAppsScriptOpened(false);
     setInfo(null);
     
     // Buscar info da coleção E o URL do Apps Script em paralelo
@@ -57,15 +61,21 @@ export default function DeleteCollectionModal({ isOpen, onClose, collection, onD
     try {
       await navigator.clipboard.writeText(buildCopyText());
       setCopied(true);
+      setJsonCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       const textarea = document.createElement('textarea');
       textarea.value = buildCopyText();
       document.body.appendChild(textarea);
       textarea.select();
-      document.execCommand('copy');
+      const successful = document.execCommand('copy');
       document.body.removeChild(textarea);
+      if (!successful) {
+        setFinalizeError('Não foi possível copiar o JSON para a área de transferência.');
+        return;
+      }
       setCopied(true);
+      setJsonCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
   };
@@ -191,12 +201,16 @@ export default function DeleteCollectionModal({ isOpen, onClose, collection, onD
                 href={appsScriptUrl || undefined}
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-disabled={!appsScriptUrl || finalizing}
+                aria-disabled={!appsScriptUrl || !jsonCopied || finalizing}
                 onClick={event => {
-                  if (!appsScriptUrl || finalizing) event.preventDefault();
+                  if (!appsScriptUrl || !jsonCopied || finalizing) {
+                    event.preventDefault();
+                    return;
+                  }
+                  setAppsScriptOpened(true);
                 }}
                 className={`rounded-lg px-4 py-2 text-center text-sm font-medium text-white ${
-                  appsScriptUrl && !finalizing
+                  appsScriptUrl && jsonCopied && !finalizing
                     ? 'bg-indigo-600 hover:bg-indigo-700'
                     : 'cursor-not-allowed bg-indigo-900 opacity-50'
                 }`}
@@ -205,7 +219,7 @@ export default function DeleteCollectionModal({ isOpen, onClose, collection, onD
               </a>
               <button
                 onClick={handleConcluir}
-                disabled={finalizing}
+                disabled={finalizing || !jsonCopied || !appsScriptOpened}
                 className="flex items-center justify-center gap-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
               >
                 {finalizing ? '⏳ A processar...' : 'Concluir'}

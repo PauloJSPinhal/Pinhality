@@ -13,7 +13,34 @@ import ManageOrphansModal from './components/ManageOrphansModal'
 import BulkCategorizeModal from './components/BulkCategorizeModal'
 import RcloneSettingsModal from './components/RcloneSettingsModal'
 import DatabaseModal from './components/DatabaseModal'
+import HelpModal from './components/HelpModal'
 import { apiFetch, UNAUTHORIZED_EVENT } from './api'
+
+const matchesSearch = (photo, searchTerm) => {
+  const search = searchTerm.toLowerCase()
+  const categoriesString = Array.isArray(photo.categories)
+    ? photo.categories.join(' ').toLowerCase()
+    : (photo.category || '').toLowerCase()
+
+  return (photo.title || '').toLowerCase().includes(search) ||
+    categoriesString.includes(search) ||
+    (photo.location || '').toLowerCase().includes(search) ||
+    (photo.description || '').toLowerCase().includes(search)
+}
+
+const matchesCategory = (photo, filterCategory) =>
+  filterCategory === 'todas' ||
+  (Array.isArray(photo.categories) && photo.categories.includes(filterCategory)) ||
+  photo.category === filterCategory
+
+const matchesCollection = (photo, filterCollection) => {
+  if (filterCollection === 'all') return true
+  if (filterCollection === 'favoritas') {
+    return photo.collection === 'favoritas' || !!photo.isFavorite
+  }
+  return photo.collection === filterCollection ||
+    !!photo.collection?.startsWith(`${filterCollection}/`)
+}
 
 export default function App() {
   const [photos, setPhotos] = useState([])
@@ -23,6 +50,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [authenticated, setAuthenticated] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedPhoto, setSelectedPhoto] = useState(null)
   const [showFullscreen, setShowFullscreen] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -31,6 +59,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterCategory, setFilterCategory] = useState('todas')
   const [filterCollection, setFilterCollection] = useState('all')
+  const [showCollectionInfo, setShowCollectionInfo] = useState(false)
   const [showManageCollections, setShowManageCollections] = useState(false)
   const [showManageCategories, setShowManageCategories] = useState(false)
   const [showManageOrphans, setShowManageOrphans] = useState(false)
@@ -313,7 +342,7 @@ export default function App() {
     }
   }
 
-  const handleSyncDrive = async (syncAllCollections = false) => {
+  const handleSyncDrive = async () => {
     setShowManageMenu(false)
 
     try {
@@ -330,8 +359,8 @@ export default function App() {
       return
     }
 
-    const selectedCollection = syncAllCollections ? 'all' : filterCollection
-    const isAll = selectedCollection === 'all' || !selectedCollection
+    const selectedCollection = filterCollection
+    const isAll = selectedCollection === 'all'
     
     let syncQuestion = ''
     if (isAll) {
@@ -346,7 +375,7 @@ export default function App() {
       }
     }
     
-    const syncDetails = syncAllCollections
+    const syncDetails = isAll
       ? '\n\nAs fotos e coleções apagadas no Drive também serão removidas da base de dados do site.'
       : '\n\nSão criadas miniaturas e versões web das fotos novas ou alteradas. Os originais ficam no Drive.'
     if (!window.confirm(syncQuestion + syncDetails)) return
@@ -354,7 +383,7 @@ export default function App() {
     try {
       // NOVA LÓGICA: usa a rota /api/sync-drive/:collectionName para pastas-mãe
       const url = isAll
-        ? `/api/sync-drive${syncAllCollections ? '?allow-empty=1' : ''}`
+        ? '/api/sync-drive'
         : `/api/sync-drive/${encodeURIComponent(selectedCollection)}`
       const body = {}
       const res = await apiFetch(url, { 
@@ -389,8 +418,12 @@ export default function App() {
     }
   }
 
-  const handleFinalizeOrphans = async () => {
-    const response = await apiFetch('/api/sync-drive?allow-empty=1&wait=1', { method: 'POST' })
+  const handleFinalizeOrphans = async (actions) => {
+    const response = await apiFetch('/api/orphans/finalize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actions })
+    })
     const data = await response.json()
     if (!response.ok) {
       throw new Error(data.error || 'Não foi possível atualizar a base de dados a partir do Google Drive.')
@@ -451,44 +484,62 @@ export default function App() {
   // FILTRAGEM E AGRUPAMENTO
   // ========================================
 
-  const filteredPhotos = photos.filter(photo => {
+  const preFilteredPhotos = useMemo(() => photos.filter(photo =>
+    !photo.pendingDriveDelete &&
+    matchesSearch(photo, searchTerm) &&
+    matchesCategory(photo, filterCategory) &&
+    matchesCollection(photo, filterCollection)
+  ), [photos, searchTerm, filterCategory, filterCollection])
+
+  const availableDates = useMemo(() => preFilteredPhotos.reduce((acc, photo) => {
+    if (photo.date && photo.date.length >= 4) {
+      const year = photo.date.substring(0, 4)
+      if (!acc[year]) acc[year] = new Set()
+      if (photo.date.length >= 7) {
+        acc[year].add(photo.date.substring(5, 7))
+      }
+    }
+    return acc
+  }, {}), [preFilteredPhotos])
+
+  const sortedYears = Object.keys(availableDates).sort((a, b) => b.localeCompare(a))
+
+  const availableLocations = useMemo(() => {
+    const locations = new Set()
+    for (const photo of preFilteredPhotos) {
+      if (photo.location && photo.location.trim()) {
+        locations.add(photo.location.trim())
+      }
+    }
+    return [...locations].sort((a, b) => a.localeCompare(b))
+  }, [preFilteredPhotos])
+
+  useEffect(() => {
+    if (filterDate !== 'all' && !availableDates[filterDate]) {
+      setFilterDate('all')
+      setFilterMonth('all')
+    } else if (filterDate !== 'all' && filterMonth !== 'all' && !availableDates[filterDate]?.has(filterMonth)) {
+      setFilterMonth('all')
+    }
+    if (filterLocation !== 'all' && !availableLocations.includes(filterLocation)) {
+      setFilterLocation('all')
+    }
+  }, [filterDate, filterMonth, filterLocation, availableDates, availableLocations])
+
+  const filteredPhotos = useMemo(() => photos.filter(photo => {
     if (photo.pendingDriveDelete) return false
 
-    const categoriesString = Array.isArray(photo.categories) 
-      ? photo.categories.join(' ').toLowerCase() 
-      : (photo.category || '').toLowerCase()
-    
-    const matchesSearch = photo.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         categoriesString.includes(searchTerm.toLowerCase()) ||
-                         (photo.location && photo.location.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                         (photo.description && photo.description.toLowerCase().includes(searchTerm.toLowerCase()))
-    
-    const matchesCategory = filterCategory === 'todas' || 
-                           (Array.isArray(photo.categories) && photo.categories.includes(filterCategory)) ||
-                           photo.category === filterCategory
-    
-    // Lógica de coleção: suporta pasta-mãe (mostra sub-coleções) + favoritas virtual
-    let matchesCollection = false
-    if (filterCollection === 'all') {
-      matchesCollection = true
-    } else if (filterCollection === 'favoritas') {
-      // "favoritas" tem DUPla classificação:
-      // 1. Fotos fisicamente na pasta "favoritas" (collection === 'favoritas')
-      // 2. Fotos marcadas como favoritas noutras coleções (isFavorite === true)
-      matchesCollection = photo.collection === 'favoritas' || !!photo.isFavorite
-    } else if (photo.collection === filterCollection) {
-      matchesCollection = true
-    } else if (photo.collection && photo.collection.startsWith(filterCollection + '/')) {
-      matchesCollection = true
-    }
-    
-    let matchesDate = filterDate === 'all' || (photo.date && photo.date.startsWith(filterDate))
-    if (matchesDate && filterMonth !== 'all') {
-      matchesDate = photo.date && photo.date.substring(5, 7) === filterMonth
-    }
+    const matchesDate = filterDate === 'all' || (photo.date && photo.date.startsWith(filterDate))
+    const matchesMonth = filterDate === 'all' || filterMonth === 'all' ||
+      (matchesDate && photo.date && photo.date.substring(5, 7) === filterMonth)
     const matchesLocation = filterLocation === 'all' || photo.location === filterLocation
-    return matchesSearch && matchesCategory && matchesCollection && matchesDate && matchesLocation
-  })
+    return matchesSearch(photo, searchTerm) &&
+      matchesCategory(photo, filterCategory) &&
+      matchesCollection(photo, filterCollection) &&
+      matchesDate &&
+      matchesMonth &&
+      matchesLocation
+  }), [photos, searchTerm, filterCategory, filterCollection, filterDate, filterMonth, filterLocation])
 
   const categoryNames = (categories && categories.categories ? categories.categories : []).map(c => c.name)
   
@@ -511,7 +562,38 @@ export default function App() {
     return acc
   }, {})
 
-  const activeCollectionName = collections.find(c => c.id === activeCollectionId || c.folderPath === activeCollectionId)?.name || null
+  const selectedCollection = filterCollection === 'all'
+    ? null
+    : collections.find(col => col.id === filterCollection || col.folderPath === filterCollection)
+  const selectedCollectionName = filterCollection === 'all'
+    ? null
+    : selectedCollection?.name || (filterCollection === 'favoritas'
+      ? 'Favoritas'
+      : filterCollection.split('/').pop())
+  const collectionDescription = selectedCollection?.description?.trim() || ''
+  const hasPublicCollectionDescription = collectionDescription &&
+    !collectionDescription.toLocaleLowerCase('pt-PT').startsWith('coleção gerada automaticamente')
+  const selectedCollectionPhotos = useMemo(() => filterCollection === 'all'
+    ? []
+    : photos.filter(photo => !photo.pendingDriveDelete && matchesCollection(photo, filterCollection)),
+  [photos, filterCollection])
+  const selectedCollectionPhotoCount = selectedCollectionPhotos.length
+  const mostCommonCollectionCategories = useMemo(() => {
+    const counts = selectedCollectionPhotos.reduce((categoryCounts, photo) => {
+      const photoCategories = Array.isArray(photo.categories)
+        ? photo.categories
+        : photo.category
+          ? [photo.category]
+          : []
+      for (const category of new Set(photoCategories.filter(Boolean))) {
+        categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1)
+      }
+      return categoryCounts
+    }, new Map())
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 5)
+  }, [selectedCollectionPhotos])
 
   // Agrupar coleções para o dropdown
   const topLevelCollections = collections.filter(c => !c.folderPath || !c.folderPath.includes('/'))
@@ -524,64 +606,6 @@ export default function App() {
   }
 
   const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
-
-  const preFilteredPhotos = photos.filter(photo => {
-    const categoriesString = Array.isArray(photo.categories) 
-      ? photo.categories.join(' ').toLowerCase() 
-      : (photo.category || '').toLowerCase()
-    const matchesSearch = photo.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         categoriesString.includes(searchTerm.toLowerCase()) ||
-                         (photo.location && photo.location.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                         (photo.description && photo.description.toLowerCase().includes(searchTerm.toLowerCase()))
-    const matchesCategory = filterCategory === 'todas' || 
-                           (Array.isArray(photo.categories) && photo.categories.includes(filterCategory)) ||
-                           photo.category === filterCategory
-    let matchesCollection = false
-    if (filterCollection === 'all') {
-      matchesCollection = true
-    } else if (photo.collection === filterCollection) {
-      matchesCollection = true
-    } else if (photo.collection && photo.collection.startsWith(filterCollection + '/')) {
-      matchesCollection = true
-    }
-    return matchesSearch && matchesCategory && matchesCollection
-  })
-
-  const availableDates = preFilteredPhotos.reduce((acc, photo) => {
-    if (photo.date && photo.date.length >= 4) {
-      const year = photo.date.substring(0, 4)
-      if (!acc[year]) acc[year] = new Set()
-      if (photo.date.length >= 7) {
-        acc[year].add(photo.date.substring(5, 7))
-      }
-    }
-    return acc
-  }, {})
-
-  const sortedYears = Object.keys(availableDates).sort((a, b) => b.localeCompare(a))
-
-  // Locais disponíveis nas fotos pré-filtradas (depende de coleção/categoria, não de data/local)
-  const availableLocations = useMemo(() => {
-    const locations = new Set()
-    for (const photo of preFilteredPhotos) {
-      if (photo.location && photo.location.trim()) {
-        locations.add(photo.location.trim())
-      }
-    }
-    return [...locations].sort((a, b) => a.localeCompare(b))
-  }, [preFilteredPhotos])
-
-  if (filterDate !== 'all' && !availableDates[filterDate]) {
-    setFilterDate('all')
-    setFilterMonth('all')
-  }
-  if (filterDate !== 'all' && filterMonth !== 'all' && !availableDates[filterDate]?.has(filterMonth)) {
-    setFilterMonth('all')
-  }
-  // Reset do local se já não está disponível
-  if (filterLocation !== 'all' && !availableLocations.includes(filterLocation)) {
-    setFilterLocation('all')
-  }
 
   // Aplicar ordenação às fotos filtradas
   const sortedPhotos = [...filteredPhotos].sort((a, b) => {
@@ -629,8 +653,20 @@ export default function App() {
               </svg>
               <div className="min-w-0">
                 <h1 className="text-xl sm:text-2xl font-bold text-white">Pinhality</h1>
-                {!authenticated && activeCollectionName && (
-                  <p className="text-xs text-gray-400 truncate">📁 {activeCollectionName}</p>
+                {selectedCollectionName && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCollectionInfo(true)}
+                    className="flex max-w-full items-center gap-1 text-left text-xs text-gray-400 hover:text-white truncate focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+                    title={`Ver informações da coleção ${selectedCollectionName}`}
+                  >
+                    <svg className="h-3.5 w-3.5 shrink-0 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <rect x="3" y="5" width="18" height="15" rx="2" strokeWidth="1.8" />
+                      <circle cx="8.5" cy="10" r="1.5" strokeWidth="1.5" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="m5 18 5-5 3 3 2-2 4 4" />
+                    </svg>
+                    <span className="truncate">{selectedCollectionName}</span>
+                  </button>
                 )}
               </div>
             </div>
@@ -730,16 +766,31 @@ export default function App() {
                   </button>
                 </>
               ) : (
-                <button
-                  onClick={() => setShowAuthModal(true)}
-                  className="bg-green-600 hover:bg-green-700 text-white px-3 sm:px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
-                  title="Iniciar Sessão"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-                  </svg>
-                  <span className="hidden sm:inline">Login</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowHelpModal(true)}
+                    className="bg-gray-700 hover:bg-gray-600 text-white px-3 sm:px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
+                    title="Ajuda para utilizar o site"
+                    aria-label="Ajuda para utilizar o site"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" strokeWidth="2" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.6 9a2.4 2.4 0 1 1 4.1 1.7c-.9.8-1.7 1.1-1.7 2.3M12 16.5h.01" />
+                    </svg>
+                    <span className="hidden sm:inline">Ajuda</span>
+                  </button>
+                  <button
+                    onClick={() => setShowAuthModal(true)}
+                    className="bg-green-600 hover:bg-green-700 text-white px-3 sm:px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
+                    title="Iniciar Sessão"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                    </svg>
+                    <span className="hidden sm:inline">Login</span>
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -912,6 +963,67 @@ export default function App() {
       )}
 
       {/* Modals */}
+      {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
+
+      {showCollectionInfo && selectedCollectionName && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) setShowCollectionInfo(false)
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="collection-info-title"
+            className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-gray-700 bg-gray-800 shadow-2xl"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-gray-700 px-4 py-4 sm:px-6">
+              <h2 id="collection-info-title" className="flex items-center gap-2 text-xl font-bold text-white">
+                <svg className="h-5 w-5 shrink-0 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3" y="5" width="18" height="15" rx="2" strokeWidth="1.8" />
+                  <circle cx="8.5" cy="10" r="1.5" strokeWidth="1.5" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="m5 18 5-5 3 3 2-2 4 4" />
+                </svg>
+                <span>{selectedCollectionName}</span>
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowCollectionInfo(false)}
+                className="text-gray-400 hover:text-white"
+                aria-label="Fechar informações da coleção"
+              >
+                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="overflow-y-auto p-4 sm:p-6">
+              {hasPublicCollectionDescription && (
+                <p className="text-sm text-gray-300">{collectionDescription}</p>
+              )}
+              <p className="mt-4 text-sm text-gray-300">
+                <span className="font-semibold text-white">{selectedCollectionPhotoCount}</span>
+                {' '}fotografia(s)
+              </p>
+              <h3 className="mt-5 font-semibold text-white">Categorias mais presentes</h3>
+              {mostCommonCollectionCategories.length > 0 ? (
+                <ol className="mt-2 space-y-2">
+                  {mostCommonCollectionCategories.map(([category, count]) => (
+                    <li key={category} className="flex items-center justify-between gap-3 rounded bg-gray-900 px-3 py-2 text-sm">
+                      <span className="text-gray-200">{category}</span>
+                      <span className="shrink-0 text-gray-400">{count} foto(s)</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="mt-2 text-sm text-gray-400">Ainda não há categorias atribuídas.</p>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
       {selectedPhoto && !showFullscreen && (
         <PhotoModal 
           photo={selectedPhoto}

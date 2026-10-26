@@ -1,7 +1,7 @@
 // ========================================
 // frontend/src/components/PhotoModal.jsx
 // ========================================
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { webSrc, originalSrc } from '../api'
 
 export default function PhotoModal({ photo, photos = [], onNavigate, onClose, onEdit, onDelete, onOpenFullscreen, authenticated }) {
@@ -11,6 +11,19 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
   const prev = currentIndex > 0 ? photos[currentIndex - 1] : null
   const next = currentIndex >= 0 && currentIndex < photos.length - 1 ? photos[currentIndex + 1] : null
   const touchX = useRef(null)
+  const maxLandscapeAspectRatio = useMemo(() => {
+    const widestLandscapeRatio = [photo, ...photos].reduce((maxRatio, item) => {
+      const width = Number(item.width)
+      const height = Number(item.height)
+      return width > height && height > 0
+        ? Math.max(maxRatio, width / height)
+        : maxRatio
+    }, 0)
+    return widestLandscapeRatio || 16 / 9
+  }, [photo, photos])
+  const description = photo.description === 'Adicionada automaticamente - editar para completar'
+    ? ''
+    : photo.description
 
   useEffect(() => {
     const onKey = (e) => {
@@ -36,19 +49,23 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
 
   return (
     <div 
-      className="fixed inset-0 bg-black bg-opacity-95 z-50 flex items-start justify-center page-x py-2 sm:py-4 overflow-y-auto overscroll-contain"
+      className="fixed inset-0 bg-black bg-opacity-95 z-50 flex items-start justify-center lg:items-center page-x photo-modal-viewport py-2 sm:py-4 overflow-y-auto overscroll-contain"
       onClick={onClose}
     >
       <div 
-        className="w-full max-w-7xl 3xl:max-w-[1800px] mx-auto my-2 sm:my-4 short:my-0"
+        className="w-full max-w-7xl lg:max-w-none 3xl:max-w-none mx-auto my-2 sm:my-4 short:my-0"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Paulo: imagem por cima da informação no telemóvel; lado a lado a partir de 1024px
             e também no telemóvel deitado (short:), onde não há altura para as duas coisas empilhadas */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 short:grid-cols-3 gap-4 sm:gap-6 short:gap-3 min-h-0">
-          
+        <div className="grid w-full min-w-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,400px)] lg:items-stretch lg:gap-x-5 short:grid-cols-3 short:items-stretch gap-4 sm:gap-6 short:gap-3 short:gap-x-5 min-h-0">
           {/* Imagem */}
-          <div className="lg:col-span-2 short:col-span-2 flex items-center justify-center min-h-0 min-w-0 relative" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+          <div
+            className="relative flex h-vd-80 min-w-0 w-full items-center justify-center overflow-hidden lg:h-auto lg:aspect-[var(--photo-landscape-ratio)] lg:max-h-vd-90 short:col-span-2 short:aspect-auto short:h-vd-90"
+            style={{ '--photo-landscape-ratio': maxLandscapeAspectRatio }}
+            onTouchStart={onTouchStart}
+            onTouchEnd={onTouchEnd}
+          >
             {prev && onNavigate && (
               <button type="button" onClick={() => onNavigate(prev)} className={`${arrowClass} left-2`} title="Anterior">
                 <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
@@ -62,22 +79,23 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
             <img
               src={webSrc(photo)}
               alt={photo.title}
-              className="max-h-vd-70 sm:max-h-vd-80 short:max-h-vd-90 w-auto max-w-full h-auto object-contain cursor-zoom-in"
+              className="block max-h-vd-70 max-w-full object-contain object-center sm:max-h-vd-80 lg:h-full lg:w-full lg:max-h-none lg:max-w-full short:h-full short:w-full short:max-h-none cursor-zoom-in"
               onClick={() => onOpenFullscreen(photo)}
               title="Clique para ver em fullscreen"
             />
           </div>
 
           {/* Painel de Informações — SCROLL FUNCIONAL EM MOBILE */}
-          {/* Paulo: no telemóvel o painel cresce e a página faz scroll (antes havia um scroll dentro de outro);
-              só tem altura máxima quando está ao lado da imagem */}
-          <div className="bg-gray-800 rounded-lg p-4 sm:p-6 short:p-3 flex flex-col min-h-0 min-w-0 lg:max-h-vd-85 lg:overflow-y-auto short:max-h-vd-90 short:overflow-y-auto">
+          {/* Paulo: no telemóvel o painel cresce; em ecrãs largos iguala a altura da área da imagem. */}
+          <div className="box-border min-w-0 bg-gray-800 rounded-lg p-4 sm:p-6 lg:mr-8 lg:p-4 short:p-3 flex flex-col min-h-0 lg:h-full lg:overflow-y-auto short:h-vd-90 short:overflow-y-auto">
             
-            <h2 className="text-xl font-bold text-white mb-3 break-words">{photo.title}</h2>
+            <h2 className="text-xl font-bold text-white mb-3 lg:mb-2 break-words">{photo.title}</h2>
 
-            {photo.description && (
-              <p className="text-gray-300 mb-4 break-words">{photo.description}</p>
-            )}
+            <div className="h-36 shrink-0 overflow-hidden mb-4 lg:mb-3">
+              {description && (
+                <p className="text-gray-300 break-words line-clamp-6 leading-6">{description}</p>
+              )}
+            </div>
 
             {(photo.location || photo.date) && (
               <div className="space-y-2 mb-4 pb-4 border-b border-gray-700">
@@ -103,14 +121,14 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
 
             {/* Dados Técnicos Básicos */}
             {(photo.aperture || photo.iso || photo.shutterSpeed || photo.focalLength) && (
-              <div className="mb-4 pb-4 border-b border-gray-700">
-                <h3 className="text-white font-semibold mb-3 flex items-center">
+              <div className="mb-4 lg:mb-3 pb-4 lg:pb-3 border-b border-gray-700">
+                <h3 className="text-white font-semibold mb-3 lg:mb-2 flex items-center">
                   <svg className="w-5 h-5 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                   </svg>
                   Dados Técnicos
                 </h3>
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-2 gap-3 lg:gap-2 text-sm">
                   {photo.aperture && <div><span className="text-gray-400">Abertura:</span> <p className="text-white break-words">f/{photo.aperture}</p></div>}
                   {photo.iso && <div><span className="text-gray-400">ISO:</span> <p className="text-white break-words">{photo.iso}</p></div>}
                   {photo.shutterSpeed && <div><span className="text-gray-400">Velocidade:</span> <p className="text-white break-words">{photo.shutterSpeed}</p></div>}
@@ -121,8 +139,8 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
 
             {/* GPS */}
             {(photo.gpsLatitude || photo.gpsLongitude) && (
-              <div className="mb-4 pb-4 border-b border-gray-700">
-                <h3 className="text-white font-semibold mb-3">Localização GPS</h3>
+              <div className="mb-4 lg:mb-3 pb-4 lg:pb-3 border-b border-gray-700">
+                <h3 className="text-white font-semibold mb-3 lg:mb-2">Localização GPS</h3>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   {photo.gpsLatitude && <div><span className="text-gray-400">Latitude:</span> <p className="text-white font-mono text-xs break-all">{photo.gpsLatitude}</p></div>}
                   {photo.gpsLongitude && <div><span className="text-gray-400">Longitude:</span> <p className="text-white font-mono text-xs break-all">{photo.gpsLongitude}</p></div>}
@@ -132,67 +150,58 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
 
             {/* Equipamento */}
             {(photo.camera || photo.lens) && (
-              <div className="mb-4 pb-4 border-b border-gray-700">
-                <h3 className="text-white font-semibold mb-3 flex items-center">
+              <div className="mb-4 lg:mb-3 pb-4 lg:pb-3 border-b border-gray-700">
+                <h3 className="text-white font-semibold mb-3 lg:mb-2 flex items-center">
                   <svg className="w-5 h-5 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                   </svg>
                   Equipamento
                 </h3>
-                {photo.camera && <p className="text-gray-300 text-sm mb-2"><span className="text-gray-400">Câmara:</span> {photo.camera}</p>}
+                {photo.camera && <p className="text-gray-300 text-sm mb-2 lg:mb-1"><span className="text-gray-400">Câmara:</span> {photo.camera}</p>}
                 {photo.lens && <p className="text-gray-300 text-sm"><span className="text-gray-400">Lente:</span> {photo.lens}</p>}
               </div>
             )}
 
             {/* Copyright */}
             {photo.copyright && (
-              <div className="mb-4 pb-4 border-b border-gray-700">
-                <h3 className="text-white font-semibold mb-2">© Copyright</h3>
+              <div className="mb-4 lg:mb-3 pb-4 lg:pb-3 border-b border-gray-700">
+                <h3 className="text-white font-semibold mb-2 lg:mb-1">© Copyright</h3>
                 <p className="text-gray-300 text-sm break-words">{photo.copyright}</p>
               </div>
             )}
-
-
-            {/* Botão Voltar — AGORA NO TOPO (entre a foto e o texto) */}
-            <button
-              onClick={onClose}
-              className="w-full mb-4 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center justify-center"
-              title="Voltar à Galeria"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              <span className="ml-2">Voltar à Galeria</span>
-            </button>
-
-            
-
-            {/* Paulo: o detalhe mostra a versão web (~1600px); o original completo vem do Drive só se o pedirem */}
-            <div className="flex flex-wrap gap-2 mb-4">
-              {/* Paulo: "Ver original" abre o teu ecrã completo, centrado como antes, em vez de uma aba nova */}
+            <div className="mt-auto pt-3">
               <button
-                type="button"
-                onClick={() => onOpenFullscreen(photo)}
-                className="flex-auto px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center"
-                title="Ver o original em resolução completa"
+                onClick={onClose}
+                className="w-full mb-3 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center justify-center"
+                title="Voltar à Galeria"
               >
-                🔍 Ver original{photo.width && photo.height ? ` (${photo.width}×${photo.height})` : ''}
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                <span className="ml-2">Voltar à Galeria</span>
               </button>
-              <a
-                href={originalSrc(photo, true)}
-                download
-                className="flex-auto px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center inline-flex items-center justify-center"
-                title="Descarregar o original"
-              >
-                ⬇️ Descarregar{photo.originalSize ? ` (${(photo.originalSize / 1024 / 1024).toFixed(1)} MB)` : ''}
-              </a>
-            </div>
 
+              <div className="flex flex-wrap gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => onOpenFullscreen(photo)}
+                  className="flex-auto px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center"
+                  title="Ver o original em resolução completa"
+                >
+                  🔍 Ver original{photo.width && photo.height ? ` (${photo.width}×${photo.height})` : ''}
+                </button>
+                <a
+                  href={originalSrc(photo, true)}
+                  download
+                  className="flex-auto px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg text-center inline-flex items-center justify-center"
+                  title="Descarregar o original"
+                >
+                  ⬇️ Descarregar{photo.originalSize ? ` (${(photo.originalSize / 1024 / 1024).toFixed(1)} MB)` : ''}
+                </a>
+              </div>
 
-
-            {/* Botões de ação (Editar / Eliminar) — sempre na parte inferior */}
-            {authenticated && (
-              <div className="flex gap-2 pt-3 mt-auto">
+              {authenticated && (
+                <div className="flex gap-2">
                 <button
                   onClick={onEdit}
                   className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg flex items-center justify-center"
@@ -214,7 +223,8 @@ export default function PhotoModal({ photo, photos = [], onNavigate, onClose, on
                   <span className="ml-2 hidden sm:inline">Eliminar</span>
                 </button>
               </div>
-            )}  
+              )}
+            </div>
           </div>
         </div>
       </div>

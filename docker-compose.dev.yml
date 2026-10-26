@@ -37,7 +37,7 @@ services:
       # JSON da base de dados e private/ (rclone.conf, permissões 600)
       - pinhality-dev-data:/data
       # derivados/<coleção>/thumb|web/*.webp e manifest.json
-      - ..dados_privados:/dados_privados
+      - ../dados_privados:/dados_privados
 
 volumes:
   pinhality-dev-data:

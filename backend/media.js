@@ -289,16 +289,17 @@ function createMedia(opts) {
     const files = [];
 
     const containerFolders = new Set();
-    if (!scopeCol) {
-      for (const item of items) {
-        if (!item.IsDir) continue;
-        const parts = item.Path.split('/');
-        if (parts.length === 1) {
-          const hasSubdirs = items.some(candidate =>
-            candidate.IsDir && candidate.Path.startsWith(`${parts[0]}/`)
-          );
-          if (hasSubdirs) containerFolders.add(parts[0]);
-        }
+    const scopedRootHasSubfolders = scopeCol && items.some(item =>
+      item.IsDir && !item.Path.includes('/')
+    );
+    for (const item of items) {
+      if (!item.IsDir) continue;
+      const parts = item.Path.split('/');
+      if (parts.length === 1) {
+        const hasSubdirs = items.some(candidate =>
+          candidate.IsDir && candidate.Path.startsWith(`${parts[0]}/`)
+        );
+        if (hasSubdirs && !scopeCol) containerFolders.add(parts[0]);
       }
     }
 
@@ -308,6 +309,7 @@ function createMedia(opts) {
       if (scopeCol) {
         // Com scopeCol: suporta ficheiros diretos (parts.length === 1) E em subpastas (parts.length === 2)
         if (parts.length === 1) {
+          if (scopedRootHasSubfolders) continue;
           files.push({ col: scopeCol, name: parts[0], item });
           folders.add(scopeCol);
         } else if (parts.length === 2) {
@@ -423,7 +425,11 @@ function createMedia(opts) {
     return job ? { ...job, failed: job.failed.slice(0, 50) } : { running: false };
   }
 
-  async function runSync(scopeCol, afterSync, scopeColsBatch, { allowEmpty = false } = {}) {
+  async function runSync(scopeCol, afterSync, scopeColsBatch, {
+    allowEmpty = false,
+    allowMissingScopes = false,
+    reconcileOnly = false
+  } = {}) {
     const colsToSync = Array.isArray(scopeColsBatch) && scopeColsBatch.length > 0 
       ? scopeColsBatch 
       : (scopeCol ? [scopeCol] : [null]);
@@ -449,7 +455,27 @@ function createMedia(opts) {
         const src = await getRcloneSource();
         if (!src) throw Object.assign(new Error('A ligação ao Google Drive ainda não está configurada.'), { code: 'RCLONE_NOT_CONFIGURED' });
 
-        const { folders: allFolders, files: allFiles } = await listRemote(src, null);
+        let allFolders;
+        let allFiles;
+        if (colsToSync[0] === null) {
+          ({ folders: allFolders, files: allFiles } = await listRemote(src, null));
+        } else {
+          const scopedListings = await Promise.all([...new Set(colsToSync)].map(async scope => {
+            try {
+              return await listRemote(src, scope);
+            } catch (error) {
+              if (allowMissingScopes && error.code === 'RCLONE_NOT_FOUND') {
+                return { folders: [], files: [] };
+              }
+              throw error;
+            }
+          }));
+          allFolders = [...new Set(scopedListings.flatMap(listing => listing.folders))];
+          allFiles = [...new Map(
+            scopedListings.flatMap(listing => listing.files)
+              .map(file => [keyOf(file.col, file.name), file])
+          ).values()];
+        }
         if (!allowEmpty && colsToSync[0] === null && allFolders.length === 0) {
           throw Object.assign(new Error(`A pasta remota ${src.remote} não tem subpastas.`), { code: 'RCLONE_EMPTY' });
         }
@@ -482,8 +508,8 @@ function createMedia(opts) {
           colsToSync[0] === null ? null : colsToSync
         );
 
-        const todo = filesToProcess.filter(f => !isUnchanged(f));
-        current.skipped = filesToProcess.length - todo.length;
+        const todo = reconcileOnly ? [] : filesToProcess.filter(f => !isUnchanged(f));
+        current.skipped = reconcileOnly ? filesToProcess.length : filesToProcess.length - todo.length;
         current.total = todo.length;
         current.phase = todo.length ? 'a processar' : 'sem alterações';
 
@@ -521,7 +547,10 @@ function createMedia(opts) {
         await saveManifest();
 
         current.phase = 'a atualizar a base de dados';
-        if (afterSync) current.db = await afterSync();
+        if (afterSync) {
+          const dbScope = colsToSync[0] === null ? null : colsToSync;
+          current.db = await afterSync(dbScope);
+        }
         current.phase = 'concluído';
       } catch (error) {
         current.error = error.message;

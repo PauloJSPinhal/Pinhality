@@ -6,7 +6,7 @@ import plugin from 'tailwindcss/plugin'
 // Paulo: alturas relativas ao ecrã com "dvh" (altura visível real no telemóvel, que muda quando a barra
 // do browser aparece/desaparece) e "vh" antes, para browsers antigos que não conhecem dvh.
 // Ex.: max-h-vd-90 → max-height: 90vh; max-height: 90dvh;
-const viewportHeights = { 50: '50', 60: '60', 70: '70', 80: '80', 85: '85', 90: '90', 100: '100' }
+const viewportHeights = { 50: '50', 60: '60', 70: '70', 80: '80', 85: '85', 90: '90', 95: '95', 100: '100' }
 
 /** @type {import('tailwindcss').Config} */
 export default {

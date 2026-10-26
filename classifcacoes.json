@@ -1,0 +1,61 @@
+[
+  {
+    "ficheiro": "PauloPinhal-20261017-111742_C0.jpg",
+    "titulo": "Retrato com lenço vermelho",
+    "descricao": "Mulher idosa de óculos e lenço vermelho, retratada em primeiro plano sob luz solar direta. Mantém expressão serena e olhar voltado para a câmara.",
+    "categorias": [
+      "retrato"
+    ]
+  },
+  {
+    "ficheiro": "PauloPinhal-20261017-111941_C0.jpg",
+    "titulo": "Voz na manifestação",
+    "descricao": "Homem de cabelos brancos, com óculos escuros, leva a mão à boca enquanto grita; ao fundo, outras pessoas e bandeiras com inscrições compõem uma manifestação.",
+    "categorias": [
+      "emocao",
+      "retrato",
+      "reivindicacao"
+    ]
+  },
+  {
+    "ficheiro": "PauloPinhal-20261017-112236_C0.jpg",
+    "titulo": "Manifestantes com punho erguido",
+    "descricao": "Duas mulheres participam numa manifestação urbana; uma ergue o punho diante de outras pessoas e de bandeiras sindicais, num ambiente de reivindicação coletiva.",
+    "categorias": [
+      "reivindicacao",
+      "multidao",
+      "urbano"
+    ]
+  },
+  {
+    "ficheiro": "PauloPinhal-20261017-112340_C0.jpg",
+    "titulo": "Manifestação com bandeiras",
+    "descricao": "Uma multidão reúne-se numa rua urbana; um homem ergue uma bandeira branca enquanto participantes exibem cartazes e avançam entre edifícios.",
+    "categorias": [
+      "multidao",
+      "reivindicacao",
+      "marcha"
+    ]
+  },
+  {
+    "ficheiro": "PauloPinhal-20261017-112652_C0.jpg",
+    "titulo": "Protesto por salários iguais",
+    "descricao": "Manifestantes seguram uma faixa e bandeiras diante de um edifício bancário. Um cartaz reivindica salário igual para trabalho de igual valor; o grupo participa numa ação coletiva ao ar livre.",
+    "categorias": [
+      "reivindicacao",
+      "marcha",
+      "urbano"
+    ]
+  },
+  {
+    "ficheiro": "PauloPinhal-20261017-115407_C0.jpg",
+    "titulo": "Entre a multidão",
+    "descricao": "Duas mulheres em primeiro plano observam em direções distintas, enquanto várias pessoas se reúnem numa rua urbana e um fotógrafo regista a cena.",
+    "categorias": [
+      "retrato",
+      "multidao",
+      "urbano",
+      "observador"
+    ]
+  }
+]

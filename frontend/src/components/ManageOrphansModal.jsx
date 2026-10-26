@@ -16,6 +16,8 @@ export default function ManageOrphansModal({ isOpen, onClose, photos = [], colle
   const [busyPhotoId, setBusyPhotoId] = useState(null);
   const [finalizing, setFinalizing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [jsonCopied, setJsonCopied] = useState(false);
+  const [appsScriptOpened, setAppsScriptOpened] = useState(false);
   const [error, setError] = useState('');
 
   const orphanPhotos = useMemo(() => photos.filter(photo => photo.orphaned), [photos]);
@@ -24,6 +26,9 @@ export default function ManageOrphansModal({ isOpen, onClose, photos = [], colle
   useEffect(() => {
     if (!isOpen) return;
     setError('');
+    setCopied(false);
+    setJsonCopied(false);
+    setAppsScriptOpened(false);
     Promise.all([
       apiFetch('/api/orphans').then(async response => {
         if (!response.ok) throw new Error('Não foi possível carregar as pastas órfãs.');
@@ -82,6 +87,7 @@ export default function ManageOrphansModal({ isOpen, onClose, photos = [], colle
 
     return JSON.stringify(actions, null, 2);
   };
+  const hasJsonActions = buildCopyText() !== '[]';
 
   const handleRestore = async (photo) => {
     const { folder } = folderAndFilename(photo);
@@ -111,6 +117,8 @@ export default function ManageOrphansModal({ isOpen, onClose, photos = [], colle
         const data = await response.json();
         throw new Error(data.error || 'Não foi possível restaurar a fotografia.');
       }
+      setJsonCopied(false);
+      setAppsScriptOpened(false);
       await onPhotosChanged();
       const foldersResponse = await apiFetch('/api/orphans');
       if (foldersResponse.ok) setFolders(await foldersResponse.json());
@@ -133,6 +141,8 @@ export default function ManageOrphansModal({ isOpen, onClose, photos = [], colle
         const data = await response.json();
         throw new Error(data.error || 'Não foi possível marcar a fotografia para apagar.');
       }
+      setJsonCopied(false);
+      setAppsScriptOpened(false);
       await onPhotosChanged();
       const foldersResponse = await apiFetch('/api/orphans');
       if (foldersResponse.ok) setFolders(await foldersResponse.json());
@@ -163,6 +173,7 @@ export default function ManageOrphansModal({ isOpen, onClose, photos = [], colle
       }
     }
     setCopied(true);
+    setJsonCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
   };
 
@@ -170,7 +181,7 @@ export default function ManageOrphansModal({ isOpen, onClose, photos = [], colle
     setFinalizing(true);
     setError('');
     try {
-      await onFinalize();
+      await onFinalize(JSON.parse(buildCopyText()));
       onClose();
     } catch (finalizeError) {
       console.error('Erro ao concluir gestão de fotos órfãs:', finalizeError);
@@ -255,7 +266,7 @@ export default function ManageOrphansModal({ isOpen, onClose, photos = [], colle
           <section className="border-t border-gray-700 pt-5">
             <h3 className="mb-2 font-semibold text-white">Pastas órfãs ({folders.length})</h3>
             <p className="mb-3 text-xs text-gray-400">
-              Depois de executar o JSON no Apps Script, clica em Concluir para sincronizar com o Drive e atualizar a base de dados antes de fechar esta janela.
+              Depois de executar o JSON no Apps Script, clica em Concluir para atualizar apenas as pastas e fotos indicadas no JSON.
             </p>
             {folders.length === 0 ? (
               <p className="text-sm text-gray-400">Não há pastas órfãs registadas.</p>
@@ -302,7 +313,7 @@ export default function ManageOrphansModal({ isOpen, onClose, photos = [], colle
             <button
               type="button"
               onClick={handleCopy}
-              disabled={finalizing || busyPhotoId !== null || (!folders.some(folder => ['empty', 'no-photos'].includes(folder.reason)) && pendingPhotos.length === 0)}
+              disabled={finalizing || busyPhotoId !== null || !hasJsonActions}
               className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
               {copied ? '✓ Copiado!' : 'Copiar JSON'}
@@ -311,12 +322,16 @@ export default function ManageOrphansModal({ isOpen, onClose, photos = [], colle
               href={appsScriptUrl || undefined}
               target="_blank"
               rel="noopener noreferrer"
-              aria-disabled={!appsScriptUrl || finalizing || busyPhotoId !== null}
+              aria-disabled={!appsScriptUrl || !jsonCopied || finalizing || busyPhotoId !== null}
               onClick={event => {
-                if (!appsScriptUrl || finalizing || busyPhotoId !== null) event.preventDefault();
+                if (!appsScriptUrl || !jsonCopied || finalizing || busyPhotoId !== null) {
+                  event.preventDefault();
+                  return;
+                }
+                setAppsScriptOpened(true);
               }}
               className={`rounded px-4 py-2 text-center text-sm font-medium text-white ${
-                appsScriptUrl && !finalizing && busyPhotoId === null
+                appsScriptUrl && jsonCopied && !finalizing && busyPhotoId === null
                   ? 'bg-indigo-600 hover:bg-indigo-700'
                   : 'cursor-not-allowed bg-indigo-900 opacity-50'
               }`}
@@ -326,10 +341,10 @@ export default function ManageOrphansModal({ isOpen, onClose, photos = [], colle
             <button
               type="button"
               onClick={handleFinalize}
-              disabled={finalizing || busyPhotoId !== null}
+              disabled={finalizing || busyPhotoId !== null || !hasJsonActions || !jsonCopied || !appsScriptOpened}
               className="rounded bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 disabled:opacity-50"
             >
-              {finalizing ? 'A sincronizar e atualizar...' : 'Concluir'}
+              {finalizing ? 'A atualizar a base de dados...' : 'Concluir'}
             </button>
           </div>
         </div>

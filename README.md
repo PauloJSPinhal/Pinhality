@@ -91,9 +91,10 @@ Os segredos ficam só no servidor e nunca são devolvidos ao browser. Campos sec
 mantêm o valor guardado. Se tentar **Sincronizar** sem credenciais (ou com um token recusado),
 o ecrã abre automaticamente para as introduzir.
 
-**Sincronizar** com uma coleção selecionada trata só essa pasta; com "Todas as Coleções" trata todas.
-A sincronização corre em segundo plano e o progresso aparece no canto do ecrã. No fim, a base de dados
-é atualizada automaticamente.
+**Sincronizar** respeita a seleção do filtro: uma coleção sincroniza essa pasta; um grupo/pasta-mãe
+sincroniza apenas as respetivas subcoleções; "Todas as Coleções" sincroniza tudo. A sincronização corre
+em segundo plano e o progresso aparece no canto do ecrã. No fim, os registos da base de dados são
+atualizados apenas para o âmbito sincronizado.
 
 Pastas-mãe com subcoleções (por exemplo, `passeios/teste_2`) são contentores, não coleções:
 as fotos pertencem à pasta onde estão guardadas, e a coleção mantém o caminho completo. Sincronizar
@@ -104,9 +105,9 @@ uma pasta-mãe inclui as respetivas subcoleções.
 Em **Gerir → Gerir Fotos Órfãs**, as fotos órfãs podem ser restauradas para a coleção que corresponde
 à pasta atual no Drive ou marcadas para eliminação. O modal apresenta o JSON para o Apps Script e os
 botões **Cancelar**, **Copiar JSON**, **Abrir Apps Script** e **Concluir**. Copia o JSON, executa-o no
-Apps Script e só depois clica em **Concluir**. Esse passo sincroniza todas as pastas com o Drive e
-atualiza a base de dados; fotos e coleções que já não existam são removidas antes de o modal fechar.
-Se a sincronização ou a atualização falhar, o modal permanece aberto e apresenta o erro.
+Apps Script e só depois clica em **Concluir**. Esse passo consulta apenas as pastas incluídas no JSON,
+remove referências a fotos apagadas e atualiza as coleções afetadas, sem descarregar imagens. O modal
+fecha depois da atualização da base de dados; se esta falhar, permanece aberto e apresenta o erro.
 
 O modal **Eliminar Coleção** segue o mesmo fluxo e a mesma ordem de botões. O JSON move primeiro as
 fotos favoritas para `favoritas` e pede ao Apps Script para apagar a pasta da coleção. Depois de

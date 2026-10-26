@@ -121,14 +121,16 @@ export default function PhotoFullscreen({
         className="absolute safe-top safe-left flex gap-2 sm:gap-3 z-50"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Voltar ao modal de informações (02) */}
+        {/* Voltar ao painel de informações */}
         <button
           onClick={onBackToModal}
           className="p-2.5 sm:p-3 rounded-full bg-black bg-opacity-40 hover:bg-opacity-70 text-white transition-all hover:scale-110 flex items-center justify-center"
           title="Voltar às informações"
+          aria-label="Voltar às informações da fotografia"
         >
           <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            <circle cx="12" cy="12" r="9" strokeWidth={2} />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11v5m0-8h.01" />
           </svg>
         </button>
 

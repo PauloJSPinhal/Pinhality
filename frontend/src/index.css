@@ -106,6 +106,13 @@ button:focus-visible {
   }
 }
 
+@media (min-width: 1024px) {
+  .photo-modal-viewport {
+    padding-left: max(0.125rem, env(safe-area-inset-left));
+    padding-right: max(0.125rem, env(safe-area-inset-right));
+  }
+}
+
 /* Posições junto às margens do ecrã, a contar com o notch e a barra inferior do iPhone.
    safe-*: cantos (1rem no telemóvel, 1.5rem a partir de 640px, como o top-6 de antes); edge-*: setas laterais (1rem). */
 .safe-top { top: max(1rem, env(safe-area-inset-top)); }

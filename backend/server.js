@@ -484,17 +484,19 @@ app.put('/api/settings/active-collection', requireAdmin, async (req, res) => {
 // ========================================
 // SCAN DE ORFÃOS NO GOOGLE DRIVE
 // ========================================
-async function scanDriveOrphans(src) {
+async function scanDriveOrphans(src, scopeCol = null) {
   const orphans = [];
-  const result = await runRclone(['lsjson', '-R', src.remote, '--retries', '1'], src, 60 * 1000);
+  const remote = scopeCol ? joinRemote(src.remote, scopeCol) : src.remote;
+  const result = await runRclone(['lsjson', '-R', remote, '--retries', '1'], src, 60 * 1000);
   if (!result.ok) return orphans;
 
   const items = JSON.parse(result.stdout || '[]');
   const dirInfo = new Map();
+  const prefix = scopeCol ? scopeCol.split('/') : [];
 
   for (const item of items) {
-    const parts = item.Path.split('/');
-    if (parts.length === 1 && !item.IsDir) continue;
+    const parts = [...prefix, ...item.Path.split('/').filter(Boolean)];
+    if (parts.length === 0) continue;
 
     if (item.IsDir) {
       const path = parts.join('/');
@@ -505,7 +507,10 @@ async function scanDriveOrphans(src) {
         dirInfo.get(parent).subdirs.add(parts[parts.length - 1]);
       }
     } else {
-      const parent = parts.slice(0, -1).join('/');
+      const parent = parts.length === prefix.length + 1
+        ? prefix.join('/')
+        : parts.slice(0, -1).join('/');
+      if (!parent) continue;
       if (!dirInfo.has(parent)) dirInfo.set(parent, { files: 0, subdirs: new Set() });
       dirInfo.get(parent).files++;
     }
@@ -579,11 +584,15 @@ async function scanFoldersRecursive(baseDir, maxDepth = 2, currentDepth = 0, cur
 // ROTA - SYNC completo (pastas + fotos)
 // ========================================
 
-async function listAvailableImages() {
+async function listAvailableImages(scopePaths = null) {
   const images = new Map();
   const folders = new Set();
   const src = await getRcloneSource();
-  const driveOrphans = src ? await scanDriveOrphans(src) : [];
+  const driveOrphans = src
+    ? scopePaths
+      ? (await Promise.all(scopePaths.map(scope => scanDriveOrphans(src, scope)))).flat()
+      : await scanDriveOrphans(src)
+    : [];
 
   const scanResult = await scanFoldersRecursive(PHOTOS_DIR, 2, 0, '');
   for (const { folderPath } of scanResult.collections) {
@@ -617,8 +626,13 @@ async function listAvailableImages() {
 
 // Atualiza collections.json e photos.json a partir das imagens disponíveis
 // Atualiza collections.json e photos.json a partir das imagens disponíveis
-async function rebuildDatabase() {
-  const { images, folders, orphans } = await listAvailableImages();
+async function rebuildDatabase(scopePaths = null) {
+  const { images, folders, orphans } = await listAvailableImages(scopePaths);
+  const isInScope = folderPath => !scopePaths || scopePaths.some(scope =>
+    folderPath === scope || folderPath.startsWith(`${scope}/`)
+  );
+  const photoFolder = photo =>
+    String(photo.imageUrl || '').replace(/^\/?photos\//, '').split('/').slice(0, -1).join('/');
 
   const ORPHANS_FILE = path.join(DATA_DIR, 'orphans.json');
 
@@ -632,6 +646,7 @@ async function rebuildDatabase() {
   // Mapa por nome de ficheiro (sem extensão), para detetar fotos movidas
   const imagesByBaseName = new Map();
   for (const [imageUrl, info] of images) {
+    if (!isInScope(info.folderPath || info.col)) continue;
     const baseName = info.file.replace(/\.[^.]+$/, '');
     imagesByBaseName.set(baseName, { imageUrl, info });
   }
@@ -646,6 +661,7 @@ async function rebuildDatabase() {
   for (let i = 0; i < collections.length; i++) {
     const col = collections[i];
     const colPath = col.folderPath || col.id;
+    if (!isInScope(colPath)) continue;
     if (foldersSet.has(colPath) || foldersSet.has(col.id)) continue; // Ainda existe
 
     // Coleção órfã! Verificar para onde foram as suas fotos
@@ -676,6 +692,7 @@ async function rebuildDatabase() {
 
   // Adicionar coleções NOVAS (para pastas que aparecem agora e não têm coleção)
   for (const folderName of folders) {
+    if (!isInScope(folderName)) continue;
     const existing = collections.find(c => c.folderPath === folderName || c.id === folderName);
     if (!existing) {
       const displayName = folderName.split('/').pop()
@@ -686,7 +703,7 @@ async function rebuildDatabase() {
         id: folderName.replace(/\//g, '_'),
         name: displayName,
         folderPath: folderName,
-        description: `Coleção gerada automaticamente`,
+        description: '',
         createdAt: new Date().toISOString(),
         photoCount: 0
       });
@@ -698,6 +715,7 @@ async function rebuildDatabase() {
   // Eliminar coleções cujas pastas desapareceram (e que não foram migradas)
   collections = collections.filter(col => {
     const colPath = col.folderPath || col.id;
+    if (!isInScope(colPath)) return true;
     if (foldersSet.has(colPath) || foldersSet.has(col.id)) return true;
     removedCollections++;
     console.log(`🗑️ Coleção removida (pasta não existe): ${col.name} [${col.folderPath || col.id}]`);
@@ -726,6 +744,10 @@ async function rebuildDatabase() {
   // Percorre fotos existentes na BD: mantém, atualiza caminho se movida, ou remove
   const validPhotos = [];
   for (const photo of photos) {
+    if (!isInScope(photoFolder(photo))) {
+      validPhotos.push(photo);
+      continue;
+    }
     const info = images.get(photo.imageUrl);
     if (info) {
       // Caminho atual ainda válido
@@ -776,6 +798,7 @@ async function rebuildDatabase() {
   // Adiciona fotos NOVAS (não estavam na BD)
   const existingImageUrls = new Set(photos.map(p => p.imageUrl));
   for (const [imageUrl, info] of images) {
+    if (!isInScope(info.folderPath || info.col)) continue;
     if (existingImageUrls.has(imageUrl)) continue;
     const newPhoto = {
       id: Date.now() + Math.random(),
@@ -786,7 +809,7 @@ async function rebuildDatabase() {
       location: '',
       date: '',
       time: '',
-      description: 'Adicionada automaticamente - editar para completar',
+      description: '',
       timestamp: Date.now()
     };
     fillExif(newPhoto, info.exif);
@@ -795,7 +818,14 @@ async function rebuildDatabase() {
   }
 
   await fs.writeFile(DATA_FILE, JSON.stringify(photos, null, 2));
-  const allOrphans = addUnassignedCollectionOrphans(orphans, collections, photos);
+  let allOrphans = addUnassignedCollectionOrphans(orphans, collections, photos);
+  if (scopePaths) {
+    const existingOrphans = JSON.parse(await fs.readFile(ORPHANS_FILE, 'utf8').catch(() => '[]'));
+    allOrphans = [
+      ...existingOrphans.filter(orphan => !isInScope(orphan.folderPath)),
+      ...allOrphans.filter(orphan => isInScope(orphan.folderPath))
+    ];
+  }
   await fs.writeFile(ORPHANS_FILE, JSON.stringify(allOrphans, null, 2));
 
   return {
@@ -1739,6 +1769,55 @@ app.post('/api/sync-drive-batch', requireAdmin, async (req, res) => {
     console.error('Erro na sincronização batch:', error);
     res.status(500).json({ error: 'Erro ao sincronizar' });
   }
+});
+
+app.post('/api/orphans/finalize', requireAdmin, async (req, res) => {
+  const actions = req.body?.actions;
+  if (!Array.isArray(actions) || actions.length === 0) {
+    return res.status(400).json({ error: 'A lista de ações para reconciliar está vazia ou inválida.' });
+  }
+
+  const scopes = new Set();
+  for (const action of actions) {
+    if (!action || typeof action !== 'object' || Array.isArray(action)) {
+      return res.status(400).json({ error: 'Ação inválida no JSON.' });
+    }
+    if (action.acao === 'apagar_pasta') {
+      if (!isValidFolderPath(action.pasta)) {
+        return res.status(400).json({ error: 'Caminho de pasta inválido no JSON.' });
+      }
+      scopes.add(action.pasta);
+      continue;
+    }
+    if (action.acao === 'apagar_ficheiros') {
+      if (!isValidFolderPath(action.pasta) || !Array.isArray(action.ficheiros) || action.ficheiros.length === 0 ||
+          action.ficheiros.some(file => !isValidCollectionName(file) || !media.IMAGE_RE.test(file))) {
+        return res.status(400).json({ error: 'Lista de ficheiros inválida no JSON.' });
+      }
+      scopes.add(action.pasta);
+      continue;
+    }
+    return res.status(400).json({ error: `Ação não suportada no JSON: ${action.acao}` });
+  }
+
+  const src = await getRcloneSource();
+  if (!src) return res.status(409).json(RCLONE_NOT_CONFIGURED);
+
+  let started;
+  try {
+    started = await media.runSync(null, rebuildDatabase, [...scopes], {
+      allowMissingScopes: true,
+      reconcileOnly: true
+    });
+  } catch (error) {
+    return res.status(409).json({ error: error.message, code: error.code, job: media.jobStatus() });
+  }
+
+  const job = await started.promise;
+  if (job.error) {
+    return res.status(502).json({ error: job.error, code: job.code, job });
+  }
+  res.json({ success: true, job });
 });
 
 // ========================================

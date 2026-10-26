@@ -49,7 +49,9 @@ export default function AddEditModal({
         focalLength: initialData.focalLength || '',
         camera: initialData.camera || '',
         lens: initialData.lens || '',
-        description: initialData.description || '',
+        description: initialData.description === 'Adicionada automaticamente - editar para completar'
+          ? ''
+          : initialData.description || '',
         isFavorite: !!initialData.isFavorite
       });
     } else {
