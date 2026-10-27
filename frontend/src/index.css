@@ -130,6 +130,23 @@ button:focus-visible {
 .edge-bottom { bottom: max(1rem, env(safe-area-inset-bottom)); }
 .safe-pb { padding-bottom: max(1.5rem, env(safe-area-inset-bottom)); }
 
+.site-logo {
+  display: block;
+  width: 160px;
+  height: 90px;
+  margin: 0;
+  padding: 0;
+  object-fit: contain;
+  cursor: pointer;
+}
+
+@media (max-width: 639px) {
+  .site-logo {
+    width: 136px;
+    height: 76px;
+  }
+}
+
 /* Paulo: em ecrãs táteis (dedo em vez de rato) todos os botões e campos têm pelo menos 44×44 px,
    o tamanho mínimo recomendado para se acertar com o dedo. No computador o aspeto não muda. */
 @media (pointer: coarse) {

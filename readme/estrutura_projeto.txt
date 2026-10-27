@@ -123,3 +123,6 @@ Modo ecrã inteiro
 │   photos.json       │ ← Base de dados
 │   /photos/*.jpg     │ ← Imagens físicas
 └─────────────────────┘
+
+
+ACESSO PauloJSPinhal | e3ge5GH56w

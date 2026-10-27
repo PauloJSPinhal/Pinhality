@@ -1,7 +1,7 @@
 // ========================================
 // frontend/src/App.jsx - COM FULLSCREEN E MODAL SEPARADOS
 // ========================================
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import PhotoGrid from './components/PhotoGrid'
 import PhotoModal from './components/PhotoModal'
 import PhotoFullscreen from './components/PhotoFullscreen'
@@ -91,6 +91,7 @@ export default function App() {
   const [showDatabaseModal, setShowDatabaseModal] = useState(false)
   const [rcloneReason, setRcloneReason] = useState('')
   const [syncJob, setSyncJob] = useState(null)
+  const photosRequestId = useRef(0)
 
   useEffect(() => {
     loadInitialData()
@@ -145,13 +146,16 @@ export default function App() {
   }
 
   const loadPhotos = async () => {
+    const requestId = ++photosRequestId.current
     try {
       const res = await fetch('/api/photos')
+      if (!res.ok) throw new Error(`Erro HTTP ${res.status}`)
       const data = await res.json()
-      setPhotos(Array.isArray(data) ? data : [])
+      if (requestId === photosRequestId.current) {
+        setPhotos(Array.isArray(data) ? data : [])
+      }
     } catch (error) {
       console.error('Erro ao carregar fotos:', error)
-      setPhotos([])
     }
   }
 
@@ -312,6 +316,23 @@ export default function App() {
         console.error('Erro ao mudar coleção ativa:', error)
       }
     }
+    await loadPhotos()
+  }
+
+  const handleChangeCategory = async (category) => {
+    setFilterCategory(category)
+    await loadPhotos()
+  }
+
+  const handleChangeDate = async (year) => {
+    setFilterDate(year)
+    setFilterMonth('all')
+    await loadPhotos()
+  }
+
+  const handleChangeMonth = async (month) => {
+    setFilterMonth(month)
+    await loadPhotos()
   }
 
   const handleCollectionsUpdate = () => {
@@ -570,20 +591,13 @@ export default function App() {
     }
   }, [filterDate, filterMonth, filterLocation, availableDates, availableLocations])
 
-  const filteredPhotos = useMemo(() => photos.filter(photo => {
-    if (photo.pendingDriveDelete) return false
-
+  const filteredPhotos = useMemo(() => preFilteredPhotos.filter(photo => {
     const matchesDate = filterDate === 'all' || (photo.date && photo.date.startsWith(filterDate))
     const matchesMonth = filterDate === 'all' || filterMonth === 'all' ||
       (matchesDate && photo.date && photo.date.substring(5, 7) === filterMonth)
     const matchesLocation = filterLocation === 'all' || photo.location === filterLocation
-    return matchesSearch(photo, searchTerm, authenticated) &&
-      matchesCategory(photo, filterCategory) &&
-      matchesCollection(photo, filterCollection) &&
-      matchesDate &&
-      matchesMonth &&
-      matchesLocation
-  }), [photos, searchTerm, filterCategory, filterCollection, filterDate, filterMonth, filterLocation, authenticated])
+    return matchesDate && matchesMonth && matchesLocation
+  }), [preFilteredPhotos, filterDate, filterMonth, filterLocation])
 
   const categoryNames = (categories && categories.categories ? categories.categories : []).map(c => c.name)
   
@@ -690,29 +704,37 @@ export default function App() {
       <header className="bg-black bg-opacity-50 backdrop-blur-md border-b border-gray-700 sticky top-0 z-40">
         <div className="max-w-[2200px] mx-auto page-x py-3 sm:py-4">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
-              <svg className="w-7 h-7 sm:w-8 sm:h-8 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              <div className="min-w-0">
-                <h1 className="text-xl sm:text-2xl font-bold text-white">Pinhality</h1>
-                {selectedCollectionName && (
-                  <button
-                    type="button"
-                    onClick={() => setShowCollectionInfo(true)}
-                    className="flex max-w-full items-center gap-1 text-left text-xs text-gray-400 hover:text-white truncate focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
-                    title={`Ver informações da coleção ${selectedCollectionName}`}
-                  >
-                    <svg className="h-3.5 w-3.5 shrink-0 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                      <rect x="3" y="5" width="18" height="15" rx="2" strokeWidth="1.8" />
-                      <circle cx="8.5" cy="10" r="1.5" strokeWidth="1.5" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="m5 18 5-5 3 3 2-2 4 4" />
-                    </svg>
-                    <span className="truncate">{selectedCollectionName}</span>
-                  </button>
-                )}
-              </div>
+            <div className="flex min-w-0 flex-col items-center">
+              <img
+                src="/signature.svg"
+                alt="Abrir ajuda"
+                onClick={() => setShowHelpModal(true)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    setShowHelpModal(true)
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                className="site-logo shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                title="Ajuda"
+              />
+              {selectedCollectionName && (
+                <button
+                  type="button"\
+                  onClick={() => setShowCollectionInfo(true)}
+                  className="-mt-2 flex max-w-full items-center gap-1 text-left text-xs text-gray-400 hover:text-white truncate focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+                  title={`Ver informações da coleção ${selectedCollectionName}`}
+                >
+                  <svg className="h-3.5 w-3.5 shrink-0 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="3" y="5" width="18" height="15" rx="2" strokeWidth="1.8" />
+                    <circle cx="8.5" cy="10" r="1.5" strokeWidth="1.5" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="m5 18 5-5 3 3 2-2 4 4" />
+                  </svg>
+                  <span className="truncate">{selectedCollectionName}</span>
+                </button>
+              )}
             </div>
             
             <div className="relative flex items-center space-x-2 sm:space-x-3 shrink-0">
@@ -900,7 +922,7 @@ export default function App() {
             {/* Seletor de Categorias (agrupadas) */}
             <select
               value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
+              onChange={(e) => handleChangeCategory(e.target.value)}
               className={selectClass}
             >
               <option value="todas" className="text-sm">🏷️ Todas as Categorias ({photos.length})</option>
@@ -922,7 +944,7 @@ export default function App() {
             {/* Seletor de ANO */}
             <select
               value={filterDate}
-              onChange={(e) => { setFilterDate(e.target.value); setFilterMonth('all') }}
+              onChange={(e) => handleChangeDate(e.target.value)}
               className={selectClass}
             >
               <option value="all" className="text-sm">📅 Todas as Datas</option>
@@ -935,11 +957,11 @@ export default function App() {
             {filterDate !== 'all' && (
               <select
                 value={filterMonth}
-                onChange={(e) => setFilterMonth(e.target.value)}
+                onChange={(e) => handleChangeMonth(e.target.value)}
                 className={selectClass}
               >
                 <option value="all" className="text-sm">🗓️ Todos os Meses</option>
-                {[...availableDates[filterDate]].sort((a, b) => a.localeCompare(b)).map(month => (
+                {[...(availableDates[filterDate] || new Set())].sort((a, b) => a.localeCompare(b)).map(month => (
                   <option key={month} value={month} className="text-sm">
                     🗓️ {monthNames[parseInt(month) - 1]}
                   </option>
