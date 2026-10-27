@@ -44,10 +44,16 @@ const hidePrivatePeopleNotes = (photo) => {
   return sanitized
 }
 
-const matchesCategory = (photo, filterCategory) =>
-  filterCategory === 'todas' ||
-  (Array.isArray(photo.categories) && photo.categories.includes(filterCategory)) ||
-  photo.category === filterCategory
+const matchesCategory = (photo, filterCategory) => {
+  if (filterCategory === 'todas') return true
+  if (filterCategory === 'nenhuma') {
+    const hasNoCategories = (!Array.isArray(photo.categories) || photo.categories.length === 0) &&
+      (!photo.category || photo.category.trim() === '')
+    return hasNoCategories
+  }
+  return (Array.isArray(photo.categories) && photo.categories.includes(filterCategory)) ||
+    photo.category === filterCategory
+}
 
 const matchesCollection = (photo, filterCollection) => {
   if (filterCollection === 'all') return true
@@ -148,7 +154,9 @@ export default function App() {
   const loadPhotos = async () => {
     const requestId = ++photosRequestId.current
     try {
-      const res = await fetch('/api/photos')
+      const res = await fetch(`/api/photos?t=${Date.now()}`, {
+        headers: { 'Cache-Control': 'no-cache' }
+      })
       if (!res.ok) throw new Error(`Erro HTTP ${res.status}`)
       const data = await res.json()
       if (requestId === photosRequestId.current) {
@@ -321,6 +329,8 @@ export default function App() {
 
   const handleChangeCategory = async (category) => {
     setFilterCategory(category)
+    // Força um refresh dos dados para garantir sincronização
+    await new Promise(resolve => setTimeout(resolve, 0))
     await loadPhotos()
   }
 
@@ -608,6 +618,12 @@ export default function App() {
     return acc
   }, {})
 
+  // Calcular fotos sem categoria
+  const photosWithoutCategory = photos.filter(p =>
+    (!Array.isArray(p.categories) || p.categories.length === 0) &&
+    (!p.category || p.category.trim() === '')
+  ).length
+
   const photosPerCollection = collections.reduce((acc, col) => {
     if (col.id === 'favoritas' || col.folderPath === 'favoritas') {
       // Favoritas: dupla classificação (físicas + virtuais marcadas)
@@ -722,7 +738,7 @@ export default function App() {
               />
               {selectedCollectionName && (
                 <button
-                  type="button"\
+                  type="button"
                   onClick={() => setShowCollectionInfo(true)}
                   className="-mt-2 flex max-w-full items-center gap-1 text-left text-xs text-gray-400 hover:text-white truncate focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
                   title={`Ver informações da coleção ${selectedCollectionName}`}
@@ -926,6 +942,7 @@ export default function App() {
               className={selectClass}
             >
               <option value="todas" className="text-sm">🏷️ Todas as Categorias ({photos.length})</option>
+              <option value="nenhuma" className="text-sm">❌ Nenhuma categoria ({photosWithoutCategory})</option>
               {(categories.groups || []).map(group => {
                 const catsInGroup = (categories.categories || []).filter(c => c.groupId === group.id)
                 if (catsInGroup.length === 0) return null
