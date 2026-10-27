@@ -22,6 +22,7 @@ const DATA_FILE = path.join(DATA_DIR, 'photos.json');
 const COLLECTIONS_FILE = path.join(DATA_DIR, 'collections.json');
 const CATEGORIES_FILE = path.join(DATA_DIR, 'categories.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+const ORPHANS_FILE = path.join(DATA_DIR, 'orphans.json');
 
 const PRIVATE_DIR = path.resolve(process.env.PRIVATE_DIR || path.join(DATA_DIR, 'private'));
 const RCLONE_CONF = path.join(PRIVATE_DIR, 'rclone.conf');
@@ -400,6 +401,24 @@ function addUnassignedCollectionOrphans(orphans, collections, photos) {
     }
   }
   return result;
+}
+
+// Filtra órfãs que já não existem no arquivo de coleções
+// (i.e., pastas que já foram removidas do Drive)
+function filterValidOrphans(orphans, collections) {
+  const validCollectionPaths = new Set(
+    collections.map(col => col.folderPath || col.id)
+  );
+  
+  return orphans.filter(orphan => {
+    if (orphan.reason === 'no-photos') {
+      // Órfãs 'no-photos' devem corresponder a uma coleção real
+      return validCollectionPaths.has(orphan.folderPath);
+    }
+    // Outros tipos de órfãs (empty, too-deep, mixed) são mantidos
+    // pois representam problemas estruturais reais no Drive
+    return true;
+  });
 }
 
 // ========================================
@@ -843,6 +862,8 @@ async function rebuildDatabase(scopePaths = null) {
       ...allOrphans.filter(orphan => isInScope(orphan.folderPath))
     ];
   }
+  // Filtra órfãs inválidas antes de salvar
+  allOrphans = filterValidOrphans(allOrphans, collections);
   await fs.writeFile(ORPHANS_FILE, JSON.stringify(allOrphans, null, 2));
 
   return {
@@ -1471,12 +1492,13 @@ app.delete('/api/photos/:id', requireAdmin, async (req, res) => {
     await fs.writeFile(DATA_FILE, JSON.stringify(updatedPhotos, null, 2));
 
     const collections = JSON.parse(await fs.readFile(COLLECTIONS_FILE, 'utf8'));
-    const ORPHANS_FILE = path.join(DATA_DIR, 'orphans.json');
     let orphans = [];
     try {
       orphans = JSON.parse(await fs.readFile(ORPHANS_FILE, 'utf8'));
     } catch {}
     orphans = addUnassignedCollectionOrphans(orphans, collections, updatedPhotos);
+    // Filtra órfãs inválidas antes de salvar
+    orphans = filterValidOrphans(orphans, collections);
     await fs.writeFile(ORPHANS_FILE, JSON.stringify(orphans, null, 2));
 
     console.log(`📂 Foto desvinculada da coleção e marcada como órfã: ${photo.title} (ID ${photoId})`);
@@ -1939,18 +1961,59 @@ app.post('/api/orphans/finalize', requireAdmin, async (req, res) => {
 // ========================================
 app.get('/api/orphans', requireAdmin, async (req, res) => {
   try {
-    const ORPHANS_FILE = path.join(DATA_DIR, 'orphans.json');
     const [data, photosData, collectionsData] = await Promise.all([
       fs.readFile(ORPHANS_FILE, 'utf8').catch(() => '[]'),
       fs.readFile(DATA_FILE, 'utf8'),
       fs.readFile(COLLECTIONS_FILE, 'utf8')
     ]);
-    const orphans = JSON.parse(data);
+    let orphans = JSON.parse(data);
     const photos = JSON.parse(photosData);
     const collections = JSON.parse(collectionsData);
+    
+    // Filtra órfãs inválidas (que já não existem no Drive)
+    orphans = filterValidOrphans(orphans, collections);
+    
+    // Se houve mudanças, atualiza o arquivo
+    const oldCount = JSON.parse(data).length;
+    if (orphans.length !== oldCount) {
+      await fs.writeFile(ORPHANS_FILE, JSON.stringify(orphans, null, 2));
+    }
+    
     res.json(addUnassignedCollectionOrphans(orphans, collections, photos));
   } catch {
     res.status(500).json({ error: 'Erro ao carregar pastas órfãs' });
+  }
+});
+
+// Limpar órfãs inválidas (pastas que já não existem no Drive)
+app.post('/api/orphans/cleanup', requireAdmin, async (req, res) => {
+  try {
+    const [data, collectionsData] = await Promise.all([
+      fs.readFile(ORPHANS_FILE, 'utf8').catch(() => '[]'),
+      fs.readFile(COLLECTIONS_FILE, 'utf8')
+    ]);
+    
+    const orphans = JSON.parse(data);
+    const collections = JSON.parse(collectionsData);
+    const originalCount = orphans.length;
+    
+    // Filtra órfãs inválidas
+    const cleanedOrphans = filterValidOrphans(orphans, collections);
+    const removedCount = originalCount - cleanedOrphans.length;
+    
+    // Atualiza o arquivo
+    await fs.writeFile(ORPHANS_FILE, JSON.stringify(cleanedOrphans, null, 2));
+    
+    res.json({
+      success: true,
+      message: `Removidas ${removedCount} órfã(s) inválida(s)`,
+      originalCount,
+      cleanedCount: cleanedOrphans.length,
+      removedCount
+    });
+  } catch (error) {
+    console.error('Erro ao limpar órfãs:', error);
+    res.status(500).json({ error: 'Erro ao limpar órfãs inválidas' });
   }
 });
 

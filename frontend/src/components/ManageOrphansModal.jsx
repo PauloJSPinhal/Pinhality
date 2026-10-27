@@ -19,6 +19,7 @@ export default function ManageOrphansModal({ isOpen, onClose, photos = [], colle
   const [jsonCopied, setJsonCopied] = useState(false);
   const [appsScriptOpened, setAppsScriptOpened] = useState(false);
   const [error, setError] = useState('');
+  const [cleaningOrphans, setCleaningOrphans] = useState(false);
 
   const orphanPhotos = useMemo(() => photos.filter(photo => photo.orphaned), [photos]);
   const pendingPhotos = useMemo(() => orphanPhotos.filter(photo => photo.pendingDriveDelete), [orphanPhotos]);
@@ -191,6 +192,40 @@ export default function ManageOrphansModal({ isOpen, onClose, photos = [], colle
     }
   };
 
+  const handleCleanupOrphans = async () => {
+    if (!window.confirm('Isto vai remover as pastas órfãs registadas que já não existem no Drive. Continua?')) {
+      return;
+    }
+    setCleaningOrphans(true);
+    setError('');
+    try {
+      const response = await apiFetch('/api/orphans/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!response.ok) {
+        throw new Error('Erro ao limpar órfãs inválidas');
+      }
+      const result = await response.json();
+      if (result.removedCount > 0) {
+        // Recarrega as pastas órfãs
+        const foldersResponse = await apiFetch('/api/orphans');
+        if (foldersResponse.ok) {
+          setFolders(await foldersResponse.json());
+        }
+        setError(''); // Clear error if cleanup was successful
+        alert(`✓ Removidas ${result.removedCount} órfã(s) inválida(s)`);
+      } else {
+        alert('Não há órfãs inválidas para remover.');
+      }
+    } catch (cleanupError) {
+      console.error('Erro ao limpar órfãs:', cleanupError);
+      setError(cleanupError.message || 'Erro ao limpar órfãs inválidas.');
+    } finally {
+      setCleaningOrphans(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-2 sm:p-4">
       <div className="flex max-h-vd-90 w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-gray-800">
@@ -264,14 +299,27 @@ export default function ManageOrphansModal({ isOpen, onClose, photos = [], colle
           </section>
 
           <section className="border-t border-gray-700 pt-5">
-            <h3 className="mb-2 font-semibold text-white">Pastas órfãs ({folders.length})</h3>
-            <p className="mb-3 text-xs text-gray-400">
-              Depois de executar o JSON no Apps Script, clica em Concluir para atualizar apenas as pastas e fotos indicadas no JSON.
-            </p>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="mb-2 font-semibold text-white">Pastas órfãs ({folders.length})</h3>
+                <p className="text-xs text-gray-400">
+                  Depois de executar o JSON no Apps Script, clica em Concluir para atualizar apenas as pastas e fotos indicadas no JSON.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCleanupOrphans}
+                disabled={cleaningOrphans || finalizing || folders.length === 0}
+                className="shrink-0 rounded bg-orange-600 px-3 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
+                title="Remove pastas órfãs que já não existem no Drive"
+              >
+                {cleaningOrphans ? 'A limpar...' : '🧹 Limpar'}
+              </button>
+            </div>
             {folders.length === 0 ? (
-              <p className="text-sm text-gray-400">Não há pastas órfãs registadas.</p>
+              <p className="mt-3 text-sm text-gray-400">Não há pastas órfãs registadas.</p>
             ) : (
-              <ul className="space-y-2">
+              <ul className="mt-3 space-y-2">
                 {folders.map((folder, index) => (
                   <li key={`${folder.folderPath}-${folder.reason}-${index}`} className="rounded bg-gray-900 p-3">
                     <code className="break-all text-sm text-white">{folder.folderPath}</code>
