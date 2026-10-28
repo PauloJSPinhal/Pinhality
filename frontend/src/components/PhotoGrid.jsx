@@ -2,21 +2,9 @@
 // frontend/src/components/PhotoGrid.jsx
 // ========================================
 import { thumbSrc } from '../api'
-import { useEffect } from 'react'
 
 export default function PhotoGrid({ photos, onPhotoClick }) {
   const photoList = Array.isArray(photos) ? photos : []
-
-  useEffect(() => {
-    if (photoList.length > 0) {
-      const ids = photoList.map(p => p.id)
-      const uniqueIds = new Set(ids)
-      if (ids.length !== uniqueIds.size) {
-        const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index)
-        console.warn('[PhotoGrid] Duplicated photo IDs detected:', [...new Set(duplicates)])
-      }
-    }
-  }, [photoList])
 
   if (photoList.length === 0) {
     return (

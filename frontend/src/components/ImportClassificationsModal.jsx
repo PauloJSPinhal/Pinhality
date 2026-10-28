@@ -250,21 +250,6 @@ export default function ImportClassificationsModal({
           <div className="rounded-lg border border-yellow-700/60 bg-yellow-900/20 p-3 text-sm text-yellow-100">
             A importação substitui o título, a descrição e todas as categorias da fotografia selecionada. Nada é gravado até confirmar.
           </div>
-        {records.length > 0 && (
-          <details className="rounded-lg border border-gray-600 bg-gray-900 p-2">
-            <summary className="cursor-pointer text-xs text-gray-400">Debug info</summary>
-            <pre className="mt-2 max-h-32 overflow-auto rounded bg-gray-950 p-2 text-xs text-gray-300">
-              {JSON.stringify({
-                recordsCount: records.length,
-                photosCount: photos.length,
-                firstRecord: records[0] ? { id: records[0].id, fileName: records[0].fileName, photoId: records[0].photoId } : null,
-                sample56: records[56] ? { id: records[56].id, fileName: records[56].fileName, photoId: records[56].photoId } : null,
-                sample70: records[70] ? { id: records[70].id, fileName: records[70].fileName, photoId: records[70].photoId } : null,
-                photoIds: photos.map(p => p.id)
-              }, null, 2)}
-            </pre>
-          </details>
-        )}
 
           <label className="block text-sm font-medium text-gray-200">
             Ficheiro JSON
