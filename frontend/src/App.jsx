@@ -160,6 +160,16 @@ export default function App() {
       if (!res.ok) throw new Error(`Erro HTTP ${res.status}`)
       const data = await res.json()
       if (requestId === photosRequestId.current) {
+        // Debug: check for duplicate IDs
+        if (Array.isArray(data)) {
+          const ids = data.map(p => p.id)
+          const uniqueIds = new Set(ids)
+          if (ids.length !== uniqueIds.size) {
+            const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index)
+            console.warn('[loadPhotos] API returned duplicate IDs:', [...new Set(duplicates)])
+          }
+          console.log('[loadPhotos] Loaded photos:', ids)
+        }
         setPhotos(Array.isArray(data) ? data : [])
       }
     } catch (error) {
