@@ -91,6 +91,7 @@ export default function ImportClassificationsModal({
   isOpen,
   onClose,
   photos = [],
+  collectionName = '',
   categories = [],
   groups = [],
   onImport
@@ -369,7 +370,10 @@ export default function ImportClassificationsModal({
         <header className="flex items-center justify-between border-b border-gray-700 p-4">
           <div>
             <h2 id="import-classifications-title" className="text-xl font-bold text-white">Importar classificações</h2>
-            <p className="mt-1 text-sm text-gray-400">Reveja e valide os dados antes de os aplicar às fotografias.</p>
+            <p className="mt-1 text-sm text-gray-400">
+              {collectionName ? <>Coleção: <span className="text-gray-200">{collectionName}</span> · </> : null}
+              Reveja e valide os dados antes de os aplicar às fotografias.
+            </p>
           </div>
           <button type="button" onClick={close} disabled={importing} className="rounded p-2 text-gray-400 hover:bg-gray-700 hover:text-white" aria-label="Fechar">✕</button>
         </header>

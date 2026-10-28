@@ -650,6 +650,7 @@ export default function App() {
     : photos.filter(photo => !photo.pendingDriveDelete && matchesCollection(photo, filterCollection)),
   [photos, filterCollection])
   const selectedCollectionPhotoCount = selectedCollectionPhotos.length
+  const canImportClassifications = filterCollection !== 'all' && filterCollection !== 'favoritas'
   const mostCommonCollectionCategories = useMemo(() => {
     const counts = selectedCollectionPhotos.reduce((categoryCounts, photo) => {
       const photoCategories = Array.isArray(photo.categories)
@@ -796,7 +797,9 @@ export default function App() {
                         </button>
                         <button
                           onClick={() => { setShowImportClassifications(true); setShowManageMenu(false) }}
-                          className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
+                          disabled={!canImportClassifications}
+                          title={canImportClassifications ? undefined : 'Selecione primeiro uma coleção no filtro de coleções'}
+                          className="w-full px-4 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
                         >
                           <span>📥</span><span>Importar Classificações</span>
                         </button>
@@ -1206,11 +1209,12 @@ export default function App() {
         />
       )}
 
-      {showImportClassifications && (
+      {showImportClassifications && canImportClassifications && (
         <ImportClassificationsModal
           isOpen={showImportClassifications}
           onClose={() => setShowImportClassifications(false)}
-          photos={photos}
+          photos={selectedCollectionPhotos}
+          collectionName={selectedCollectionName}
           categories={categories.categories || []}
           groups={categories.groups || []}
           onImport={handleImportClassifications}
