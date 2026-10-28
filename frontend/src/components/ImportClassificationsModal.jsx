@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useRef } from 'react'
 import { thumbSrc } from '../api'
 
 const normalizeName = (value) => value
@@ -46,6 +46,7 @@ export default function ImportClassificationsModal({
   const [importError, setImportError] = useState('')
   const [importSuccess, setImportSuccess] = useState('')
   const [importing, setImporting] = useState(false)
+  const recordIdCounterRef = useRef(0)
 
   const categoryLookup = useMemo(() => {
     const lookup = new Map()
@@ -78,12 +79,22 @@ export default function ImportClassificationsModal({
       if (record.photoId) targetCounts.set(String(record.photoId), (targetCounts.get(String(record.photoId)) || 0) + 1)
     }
 
-    return records.map(record => {
+    return records.map((record, recordIndex) => {
       const errors = []
       const warnings = []
       const nameKey = normalizeFileName(record.fileName)
       const photo = photos.find(item => String(item.id) === String(record.photoId))
       const recordCategories = Array.isArray(record.categories) ? record.categories : []
+
+      // Debug: log de registos problemáticos
+      if (recordIndex === 1 || recordIndex === 56 || recordIndex === 70) {
+        console.log(`[DEBUG] Registo ${recordIndex}:`, {
+          fileName: record.fileName,
+          photoId: record.photoId,
+          foundPhoto: photo ? photo.title : 'NOT FOUND',
+          allPhotosIds: photos.map(p => p.id)
+        })
+      }
 
       if (!record.validObject) errors.push('O registo não é um objeto JSON.')
       if (!record.fileName) errors.push('Nome de ficheiro inválido ou em falta.')
@@ -128,6 +139,7 @@ export default function ImportClassificationsModal({
       if (parsed.length === 0) throw new Error('O ficheiro não contém classificações.')
       if (parsed.length > 500) throw new Error('O ficheiro excede o limite de 500 classificações por importação.')
 
+      recordIdCounterRef.current = 0
       setRecords(parsed.map((raw, index) => {
         const validObject = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
         const fileName = validObject ? sourceFileName(raw.ficheiro) : ''
@@ -135,7 +147,7 @@ export default function ImportClassificationsModal({
         const categoriesAreList = Array.isArray(sourceCategories)
         const matches = fileName ? photoLookup.get(normalizeFileName(fileName)) || [] : []
         return {
-          id: `import-${Date.now()}-${index}`,
+          id: `import-${recordIdCounterRef.current++}`,
           validObject,
           fileName,
           title: validObject && typeof raw.titulo === 'string' ? raw.titulo : '',
@@ -238,6 +250,21 @@ export default function ImportClassificationsModal({
           <div className="rounded-lg border border-yellow-700/60 bg-yellow-900/20 p-3 text-sm text-yellow-100">
             A importação substitui o título, a descrição e todas as categorias da fotografia selecionada. Nada é gravado até confirmar.
           </div>
+        {records.length > 0 && (
+          <details className="rounded-lg border border-gray-600 bg-gray-900 p-2">
+            <summary className="cursor-pointer text-xs text-gray-400">Debug info</summary>
+            <pre className="mt-2 max-h-32 overflow-auto rounded bg-gray-950 p-2 text-xs text-gray-300">
+              {JSON.stringify({
+                recordsCount: records.length,
+                photosCount: photos.length,
+                firstRecord: records[0] ? { id: records[0].id, fileName: records[0].fileName, photoId: records[0].photoId } : null,
+                sample56: records[56] ? { id: records[56].id, fileName: records[56].fileName, photoId: records[56].photoId } : null,
+                sample70: records[70] ? { id: records[70].id, fileName: records[70].fileName, photoId: records[70].photoId } : null,
+                photoIds: photos.map(p => p.id)
+              }, null, 2)}
+            </pre>
+          </details>
+        )}
 
           <label className="block text-sm font-medium text-gray-200">
             Ficheiro JSON
