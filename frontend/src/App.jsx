@@ -14,6 +14,7 @@ import BulkCategorizeModal from './components/BulkCategorizeModal'
 import ImportClassificationsModal from './components/ImportClassificationsModal'
 import RcloneSettingsModal from './components/RcloneSettingsModal'
 import DatabaseModal from './components/DatabaseModal'
+import HelpModal from './components/HelpModal'
 import { apiFetch, UNAUTHORIZED_EVENT } from './api'
 
 const normalizeSearchText = (value) => String(value || '')
@@ -71,6 +72,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [authenticated, setAuthenticated] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedPhoto, setSelectedPhoto] = useState(null)
   const [showFullscreen, setShowFullscreen] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -1042,6 +1044,7 @@ export default function App() {
       )}
 
       {/* Modals */}
+      {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
       {showCollectionInfo && selectedCollectionName && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
