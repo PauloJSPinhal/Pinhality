@@ -62,6 +62,11 @@ function isValidFolderPath(folderPath) {
   return true;
 }
 
+// Gerar ID único para fotos (evitar colisões)
+function generatePhotoId() {
+  return Date.now() + parseInt(crypto.randomBytes(2).toString('hex'), 16) / 65536;
+}
+
 const media = createMedia({
   photosDir: PHOTOS_DIR,
   derivedDir: DERIVED_DIR,
@@ -837,7 +842,7 @@ async function rebuildDatabase(scopePaths = null) {
     if (!isInScope(info.folderPath || info.col)) continue;
     if (existingImageUrls.has(imageUrl)) continue;
     const newPhoto = {
-      id: Date.now() + Math.random(),
+      id: generatePhotoId(),
       title: info.file.replace(/\.[^.]+$/, ''),
       imageUrl,
       collection: info.col,
