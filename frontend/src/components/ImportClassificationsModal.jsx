@@ -135,7 +135,7 @@ export default function ImportClassificationsModal({
         const categoriesAreList = Array.isArray(sourceCategories)
         const matches = fileName ? photoLookup.get(normalizeFileName(fileName)) || [] : []
         return {
-          id: index,
+          id: `import-${Date.now()}-${index}`,
           validObject,
           fileName,
           title: validObject && typeof raw.titulo === 'string' ? raw.titulo : '',
