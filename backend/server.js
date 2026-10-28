@@ -1402,7 +1402,9 @@ app.post('/api/photos/import-classifications', requireAdmin, async (req, res) =>
       }
       const title = cleanText(item.title, 300).trim();
       if (!title) return res.status(400).json({ error: `O título da fotografia "${photo.title || photoId}" não pode ficar vazio.` });
-      if (typeof item.description !== 'string' || item.description.length > 5000) {
+      // Descrição opcional: se omitida, mantém a descrição atual da fotografia
+      const updatesDescription = item.description !== undefined;
+      if (updatesDescription && (typeof item.description !== 'string' || item.description.length > 5000)) {
         return res.status(400).json({ error: `A descrição da fotografia "${photo.title || photoId}" é inválida (máximo 5000 caracteres).` });
       }
       if (!Array.isArray(item.categories) || item.categories.length > 50) {
@@ -1427,7 +1429,7 @@ app.post('/api/photos/import-classifications', requireAdmin, async (req, res) =>
       updates.push({
         ...photo,
         title,
-        description: cleanText(item.description, 5000),
+        description: updatesDescription ? cleanText(item.description, 5000) : photo.description,
         categories: mappedCategories
       });
     }

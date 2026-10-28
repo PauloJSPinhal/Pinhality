@@ -1212,6 +1212,7 @@ export default function App() {
           onClose={() => setShowImportClassifications(false)}
           photos={photos}
           categories={categories.categories || []}
+          groups={categories.groups || []}
           onImport={handleImportClassifications}
         />
       )}
