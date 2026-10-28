@@ -1341,7 +1341,17 @@ app.get('/api/photos', async (req, res) => {
       return publicView(req, { ...photo, ...media.urlsFor(photo.imageUrl) });
     });
 
-    res.json(photos);
+    // Remover duplicatas de IDs (filtro de segurança)
+    const seenIds = new Set();
+    const uniquePhotos = [];
+    for (const photo of photos) {
+      if (!seenIds.has(photo.id)) {
+        seenIds.add(photo.id);
+        uniquePhotos.push(photo);
+      }
+    }
+
+    res.json(uniquePhotos);
   } catch (error) {
     console.error('Erro ao ler fotos:', error);
     res.status(500).json({ error: 'Erro ao ler fotos' });
