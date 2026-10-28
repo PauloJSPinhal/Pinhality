@@ -36,6 +36,18 @@ const categoriesForPhoto = (photo) => Array.isArray(photo.categories)
 const MAX_CATEGORIES = 3
 const AUTO_DESCRIPTION = 'Adicionada automaticamente'
 const collator = (a, b) => String(a).localeCompare(String(b), 'pt-PT', { sensitivity: 'base' })
+
+const ISSUE_OPTIONS = [
+  { key: 'cat-excesso', label: `Categorias em excesso (mais de ${MAX_CATEGORIES})` },
+  { key: 'cat-falta', label: 'Categorias em falta (nenhuma)' },
+  { key: 'cat-inexistente', label: 'Categoria inexistente' },
+  { key: 'cat-repetida', label: 'Categorias repetidas' },
+  { key: 'desc-vazia', label: 'Descrição vazia (apaga a atual)' },
+  { key: 'ficheiro-repetido', label: 'Ficheiro repetido no JSON' },
+  { key: 'foto-repetida', label: 'Foto escolhida em mais de um registo' },
+  { key: 'sem-foto', label: 'Sem fotografia' },
+  { key: 'titulo-invalido', label: 'Título em falta ou inválido' }
+].sort((a, b) => collator(a.label, b.label))
 const fileStem = (name) => name.replace(/\.[^.]+$/, '')
 const sameCategories = (a, b) => {
   const left = [...a].sort(collator)
@@ -103,6 +115,7 @@ export default function ImportClassificationsModal({
   const [importSuccess, setImportSuccess] = useState('')
   const [importing, setImporting] = useState(false)
   const [filter, setFilter] = useState('all')
+  const [issueFilter, setIssueFilter] = useState('all')
   const [editingTargets, setEditingTargets] = useState(() => new Set())
   const [diffRowId, setDiffRowId] = useState(null)
   const recordIdCounterRef = useRef(0)
@@ -215,7 +228,19 @@ export default function ImportClassificationsModal({
 
       const canImport = !!photo && errors.length === 0
       const status = !photo ? 'error' : errors.length ? 'error' : warnings.length ? 'warning' : 'ready'
-      return { ...record, index: recordIndex, photo, errors, warnings, changes, replaces, status, canImport }
+
+      const issues = []
+      if (!photo) issues.push('sem-foto')
+      if (Array.isArray(record.categories) && recordCategories.length === 0) issues.push('cat-falta')
+      if (recordCategories.length > MAX_CATEGORIES) issues.push('cat-excesso')
+      if (recordCategories.some(category => category.name === '' && category.sourceName)) issues.push('cat-inexistente')
+      if (normalizedCategories.some((category, index) => normalizedCategories.indexOf(category) !== index)) issues.push('cat-repetida')
+      if (record.includeDescription && !record.description.trim()) issues.push('desc-vazia')
+      if (nameKey && filenameCounts.get(nameKey) > 1) issues.push('ficheiro-repetido')
+      if (photo && targetCounts.get(String(photo.id)) > 1) issues.push('foto-repetida')
+      if (!record.title.trim() || !record.titleValid || record.title.length > 300) issues.push('titulo-invalido')
+
+      return { ...record, index: recordIndex, photo, errors, warnings, changes, replaces, status, canImport, issues }
     })
   }, [photos, records])
 
@@ -226,11 +251,13 @@ export default function ImportClassificationsModal({
     error: rows.filter(row => row.status === 'error').length,
     replace: rows.filter(row => row.replaces).length
   }
+  const issueCounts = Object.fromEntries(ISSUE_OPTIONS.map(option => [option.key, rows.filter(row => row.issues.includes(option.key)).length]))
   const visibleRows = rows.filter(row =>
-    filter === 'all' ||
-    (filter === 'warning' && row.status === 'warning') ||
-    (filter === 'replace' && row.replaces) ||
-    (filter === 'error' && row.status === 'error')
+    (filter === 'all' ||
+      (filter === 'warning' && row.status === 'warning') ||
+      (filter === 'replace' && row.replaces) ||
+      (filter === 'error' && row.status === 'error')) &&
+    (issueFilter === 'all' || row.issues.includes(issueFilter))
   )
   const diffRow = rows.find(row => row.id === diffRowId)
 
@@ -326,6 +353,7 @@ export default function ImportClassificationsModal({
     setImportError('')
     setImportSuccess('')
     setFilter('all')
+    setIssueFilter('all')
     setDiffRowId(null)
     setEditingTargets(new Set())
     onClose()
@@ -416,6 +444,19 @@ export default function ImportClassificationsModal({
                     {label}
                   </button>
                 ))}
+                <select
+                  value={issueFilter}
+                  onChange={event => setIssueFilter(event.target.value)}
+                  aria-label="Filtrar por situação"
+                  className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-white"
+                >
+                  <option value="all">Situação: todas</option>
+                  {ISSUE_OPTIONS.map(option => (
+                    <option key={option.key} value={option.key} disabled={issueCounts[option.key] === 0 && issueFilter !== option.key}>
+                      {option.label} ({issueCounts[option.key]})
+                    </option>
+                  ))}
+                </select>
                 <span className="text-green-300">✓ {counts.ready} prontos</span>
               </div>
 
