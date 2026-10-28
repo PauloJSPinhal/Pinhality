@@ -264,8 +264,12 @@ export default function AddEditModal({
               {/*<div className="bg-gray-700 border border-gray-600 rounded-lg p-3 columns-1 sm:columns-2 lg:columns-3 gap-3">*/}
                 <div className="bg-gray-700 border border-gray-600 rounded-lg p-3 columns-1 sm:columns-2 lg:columns-4 gap-3">
                 {catGroups.length === 0 ? (
-                  // Formato antigo (array de strings)
-                  allCats.map(cat => {
+                  // Formato antigo (array de strings) - ordenar alfabeticamente
+                  [...allCats].sort((a, b) => {
+                    const nameA = (typeof a === 'string' ? a : a.name).toLowerCase();
+                    const nameB = (typeof b === 'string' ? b : b.name).toLowerCase();
+                    return nameA.localeCompare(nameB, 'pt-PT');
+                  }).map(cat => {
                     const catName = typeof cat === 'string' ? cat : cat.name;
                     return (
                       <label key={catName} className="flex items-center space-x-2 py-1.5 cursor-pointer hover:bg-gray-600 px-2 rounded break-inside-avoid">
@@ -287,9 +291,11 @@ export default function AddEditModal({
                     );
                   })
                 ) : (
-                  // Formato novo (com grupos) - distribui em 3 colunas sem partir grupos
-                  catGroups.map(group => {
-                    const catsInGroup = allCats.filter(c => c.groupId === group.id);
+                  // Formato novo (com grupos) - ordenar grupos alfabeticamente e categorias dentro de cada grupo
+                  [...catGroups].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'pt-PT')).map(group => {
+                    const catsInGroup = allCats
+                      .filter(c => c.groupId === group.id)
+                      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'pt-PT'));
                     if (catsInGroup.length === 0) return null;
                     return (
                       <div key={group.id} className="mb-2 break-inside-avoid">

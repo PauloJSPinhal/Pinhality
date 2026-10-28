@@ -216,8 +216,8 @@ export default function BulkCategorizeModal({ isOpen, onClose, photos, categorie
                 >
                   Foto
                 </th>
-                {/* Labels horizontais agrupadas por grupo */}
-                {groups.map(group => {
+                {/* Labels horizontais agrupadas por grupo - ordenar alfabeticamente */}
+                {[...groups].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'pt-PT')).map(group => {
                   const catsInGroup = categoriesByGroup[group.id] || []
                   if (catsInGroup.length === 0) return null
                   return catsInGroup.map(cat => (

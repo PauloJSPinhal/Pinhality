@@ -14,7 +14,6 @@ import BulkCategorizeModal from './components/BulkCategorizeModal'
 import ImportClassificationsModal from './components/ImportClassificationsModal'
 import RcloneSettingsModal from './components/RcloneSettingsModal'
 import DatabaseModal from './components/DatabaseModal'
-import HelpModal from './components/HelpModal'
 import { apiFetch, UNAUTHORIZED_EVENT } from './api'
 
 const normalizeSearchText = (value) => String(value || '')
@@ -72,7 +71,6 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [authenticated, setAuthenticated] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
-  const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedPhoto, setSelectedPhoto] = useState(null)
   const [showFullscreen, setShowFullscreen] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -856,19 +854,6 @@ export default function App() {
               ) : (
                 <>
                   <button
-                    type="button"
-                    onClick={() => setShowHelpModal(true)}
-                    className="bg-gray-700 hover:bg-gray-600 text-white px-3 sm:px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
-                    title="Ajuda para utilizar o site"
-                    aria-label="Ajuda para utilizar o site"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                      <circle cx="12" cy="12" r="9" strokeWidth="2" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.6 9a2.4 2.4 0 1 1 4.1 1.7c-.9.8-1.7 1.1-1.7 2.3M12 16.5h.01" />
-                    </svg>
-                    <span className="hidden sm:inline">Ajuda</span>
-                  </button>
-                  <button
                     onClick={() => setShowAuthModal(true)}
                     className="bg-green-600 hover:bg-green-700 text-white px-3 sm:px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
                     title="Iniciar Sessão"
@@ -935,7 +920,7 @@ export default function App() {
               })}
             </select>
 
-            {/* Seletor de Categorias (agrupadas) */}
+            {/* Seletor de Categorias (agrupadas e ordenadas alfabeticamente) */}
             <select
               value={filterCategory}
               onChange={(e) => handleChangeCategory(e.target.value)}
@@ -943,8 +928,10 @@ export default function App() {
             >
               <option value="todas" className="text-sm">🏷️ Todas as Categorias ({photos.length})</option>
               <option value="nenhuma" className="text-sm">❌ Nenhuma categoria ({photosWithoutCategory})</option>
-              {(categories.groups || []).map(group => {
-                const catsInGroup = (categories.categories || []).filter(c => c.groupId === group.id)
+              {[...(categories.groups || [])].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'pt-PT')).map(group => {
+                const catsInGroup = (categories.categories || [])
+                  .filter(c => c.groupId === group.id)
+                  .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'pt-PT'));
                 if (catsInGroup.length === 0) return null
                 return (
                   <optgroup key={group.id} label={`${group.icon} ${group.name}`} className="text-sm">
@@ -1052,8 +1039,6 @@ export default function App() {
       )}
 
       {/* Modals */}
-      {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
-
       {showCollectionInfo && selectedCollectionName && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
